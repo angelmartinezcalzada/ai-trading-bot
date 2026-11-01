@@ -5,3 +5,4 @@ solders>=0.21
 pytest>=8
 
 websockets>=12
+pandas>=2.0
