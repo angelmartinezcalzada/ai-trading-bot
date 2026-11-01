@@ -310,6 +310,12 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(); ap.add_argument("--config", default="config.json"); ap.add_argument("--exchange", default="binance")
     ap.add_argument("--minutes", type=float); ap.add_argument("--live", action="store_true"); ap.add_argument("--scan", action="store_true"); ap.add_argument("-v", action="store_true")
     a = ap.parse_args(); cfg = json.load(open(a.config)); cfg["_path"] = a.config
+    try:   # one bot per exchange per machine: a duplicate (two supervisors, a stray launch) would trade the same wallet twice
+        import subprocess
+        others = [int(x) for x in subprocess.run(["pgrep", "-f", f"python3 bot.py --exchange {a.exchange}( |$)"], capture_output=True, text=True, timeout=3).stdout.split() if x.isdigit() and int(x) != os.getpid()]
+        if others: sys.exit(f"otro bot.py --exchange {a.exchange} ya corre (pid {others[0]}); este se cierra")
+    except SystemExit: raise
+    except Exception: pass
     logging.basicConfig(level=logging.DEBUG if a.v else logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         handlers=[logging.StreamHandler(), logging.FileHandler(f"bot_{a.exchange}.log")])
     if a.exchange == "solana":
