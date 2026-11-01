@@ -32,5 +32,6 @@ done
     [ -n "$U" ] && echo "$U" > tunnel_url.txt && echo "$(date -Is) [tunnel] $U" >> supervisor.log
     wait $TP; sleep 5
   done ) &
-( while [ ! -f STOP ]; do pgrep -f "tailscaled --tun=userspace" >/dev/null || (setsid ~/bin/tailscaled --tun=userspace-networking --statedir=$HOME/.tailscale --socket=$HOME/.tailscale/tailscaled.sock >> ~/.tailscale/tailscaled.log 2>&1 &); sleep 60; done ) &
+# Tailscale en espacio de usuario: solo en máquinas que lo tengan instalado en ~/bin (la de Grok); en un PC normal no hace nada
+[ -x "$HOME/bin/tailscaled" ] && mkdir -p "$HOME/.tailscale" && ( while [ ! -f STOP ]; do pgrep -f "tailscaled --tun=userspace" >/dev/null || (setsid ~/bin/tailscaled --tun=userspace-networking --statedir=$HOME/.tailscale --socket=$HOME/.tailscale/tailscaled.sock >> ~/.tailscale/tailscaled.log 2>&1 &); sleep 60; done ) &
 wait
