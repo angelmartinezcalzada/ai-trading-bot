@@ -435,7 +435,12 @@ def _insider(root, now):
     L = lambda x: [i for i in (x or []) if isinstance(i, dict)] if isinstance(x, list) else []
     conv = st.get("conv") if isinstance(st.get("conv"), dict) else {}
     top = sorted(((m, c) for m, c in conv.items() if isinstance(c, dict)), key=lambda kv: -_f(kv[1].get("score"), 0))[:5]
-    h.update(tracked=_i(st.get("tracked"), None), cycle_s=_f(st.get("cycle_s")), live_ranked=_i(st.get("live_ranked"), None),
+    ws = None
+    try:
+        w, wmt = _load_json(_p(root, "insider_ws_status.json"))
+        if isinstance(w, dict): ws = {"state": _s(w.get("state"), 40), "subs": _i(w.get("subs"), None), "events": _i(w.get("events"), None), "ts": _f(w.get("ts")) or wmt, "age_s": round(now - (_f(w.get("ts")) or wmt), 1)}
+    except Exception: pass
+    h.update(ws=ws, tracked=_i(st.get("tracked"), None), cycle_s=_f(st.get("cycle_s")), live_ranked=_i(st.get("live_ranked"), None),
              counts={_s(k, 24): _i(v, 0) for k, v in (st.get("counts") or {}).items()} if isinstance(st.get("counts"), dict) else {},
              alerts=[{"t": _f(a.get("t")), "mint_short": _short(a.get("mint")), "elite": _i(a.get("elite"), None), "n": _i(a.get("n"), None), "score": _f(a.get("score")), "fwd1h": _f(a.get("fwd1h"))}
                      for a in L(st.get("alerts"))[-10:][::-1]],

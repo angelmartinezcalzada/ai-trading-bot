@@ -244,11 +244,17 @@ def live(conv_win=1800, poll=8, max_wallets=120):
                 return o["sc"] + (0.6*((l.get("h", 0)+1)/(n+2)-0.5)*math.log1p(n) if n else 0)
             ranked = sorted([w for w, o in W.items() if o.get("tier") in ("elite", "good")], key=lambda w: -rank(w))[:max_wallets]
             track = [w for w in ranked if W[w]["tier"] == "elite" or cyc % 2 == 0]
-            for w in track:
-                s = rpc("getSignaturesForAddress", [w, {"limit": 8, "commitment": "confirmed"}], gap=0.12) or []   # confirmed instead of finalized: ~12 s less detection lag
+            try: import insider_ws; wsq = insider_ws.drain(insider_ws.QUEUE); ws_ok = insider_ws.healthy()   # real-time feed (insider_ws.py), if running
+            except Exception: wsq, ws_ok = {}, False
+            targets = [w for w in dict.fromkeys(list(wsq) + track) if w in W]
+            for w in targets:
+                if w in wsq: s = [{"signature": x} for x in wsq[w]]                                     # WebSocket notifications: seconds, not minutes
+                elif ws_ok and cyc % 10: continue                                                        # socket healthy: RPC polling only every 10th cycle (safety net)
+                else: s = rpc("getSignaturesForAddress", [w, {"limit": 8, "commitment": "confirmed"}], gap=0.12) or []   # confirmed instead of finalized: ~12 s less detection lag
                 done = st["done"].get(w)
-                if done is None:                                               # first sight of a wallet: adopt its history without replaying it
-                    st["done"][w] = [x["signature"] for x in s]; continue
+                if done is None:                                               # first sight of a wallet: adopt its RPC history without replaying it (a live WS event is real: keep it)
+                    st["done"][w] = done = ([] if w in wsq else [x["signature"] for x in s])
+                    if w not in wsq: continue
                 for e in pending_swaps(s, done, lambda sig: parse_swap(sig, owner=w)):
                         ev = dict(t=e["ts"] or time.time(), w=w, tier=W[w]["tier"], mint=e["mint"], usd_sol=round(abs(e["dsol"]), 3), lag_s=round(time.time()-(e["ts"] or time.time())))
                         if e["dq"] > 0 and e["dsol"] < 0: st["buys"].append(ev); k = "buy"; st["wbuys"].append(dict(ev, px=_px(e["mint"])))

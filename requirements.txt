@@ -3,3 +3,5 @@ flask>=3.0
 numpy>=1.26
 solders>=0.21
 pytest>=8
+
+websockets>=12
