@@ -11,7 +11,10 @@ fi
 if [ -d "$DIR/.git" ]; then
   echo "== actualizando $DIR (tus ajustes de config.json se conservan)"
   cd "$DIR"; [ -f config.json ] && cp config.json config.local.json
-  git checkout -q -- config.json 2>/dev/null || true; git pull -q
+  # revisiones que una versión anterior del operador escribió en DECISIONS.md -> se conservan en DIARIO.md (diario local)
+  if ! git diff --quiet -- DECISIONS.md 2>/dev/null; then git diff -- DECISIONS.md | grep '^+' | grep -v '^+++' | sed 's/^+//' >> DIARIO.md; echo "== revisiones locales movidas a DIARIO.md"; fi
+  git checkout -q -- . 2>/dev/null || true        # ficheros del repo vuelven a su versión (el estado, el wallet y los CSV no están en git; config.json se fusiona después)
+  git pull -q
   [ -f config.local.json ] && python3 tools/config_merge.py config.local.json config.json && rm -f config.local.json
 else echo "== clonando en $DIR"; git clone -q "$REPO" "$DIR"; fi
 cd "$DIR"; chmod +x *.sh tools/*.py 2>/dev/null || true
