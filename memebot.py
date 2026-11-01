@@ -75,6 +75,7 @@ class Meme:
         s.cash = s.c["starting_equity"]; s.pos = {}; s.trades = []; s.seen = {}; s.dead = {}; s.day = dt.date.today().isoformat(); s.day_start = s.cash; s.halted = False
         s.signals, s.cands, s.paused, s.eq_t, s.scan_t, s.sol, s.sol24, s.decisions = [], [], False, 0, 0, 0.0, 0.0, []
         import brain; s.brain = brain.Brain(); s.learn_t = 0
+        s._fresh_live = live and not os.path.exists(s.state_file)   # baseline comes from the wallet at the first reconcile (rebase_day_start)
         if os.path.exists(s.state_file):
             st = json.load(open(s.state_file)); s.__dict__.update({k: st[k] for k in ("cash", "pos", "trades", "seen", "day", "day_start", "halted", "dead") if k in st})
         if not os.path.exists(s.csv):
@@ -142,6 +143,19 @@ class Meme:
     def save(s):
         st = {k: getattr(s, k) for k in ("cash", "pos", "trades", "seen", "day", "day_start", "halted", "dead")}
         json.dump(st, open(s.state_file+".tmp", "w")); os.replace(s.state_file+".tmp", s.state_file)
+    def rebase_day_start(s):
+        """LIVE started with --live and no state file: __init__ set day_start = starting_equity (config, e.g. 1000 $) while the real
+        wallet is ~100 $ -> the 5 % daily stop fired on day 1 against a baseline that never existed (found 01-nov on a fresh install).
+        Once reconcile() has read the wallet, the first baseline of the day is the real equity. Also repairs a state saved with that
+        bogus baseline (day_start == starting_equity and the wallet is worth < half of it: a true -50 % day is impossible, the
+        -5 % stop flattens first). Returns True when it rebased. Never touches a real baseline."""
+        if not s.live or not s.wallet: return False
+        eq = s.equity(); base = float(s.c.get("starting_equity", 0) or 0)
+        bogus = base > 0 and abs(s.day_start - base) < 1e-9 and eq < 0.5 * base
+        if not (getattr(s, "_fresh_live", False) or bogus): return False
+        was = s.day_start; s.day_start = eq; s._fresh_live = False
+        if bogus and s.halted and not s.pos: s.halted = False; log.warning("[solana] daily stop cleared: it was measured against the config baseline, not the wallet")
+        log.warning("[solana] day_start rebased %.2f -> %.2f (real wallet equity)", was, eq); s.save(); return True
     # ---------------- Scanner ----------------
     DEXES = ["pumpswap", "meteora-damm-v2", "raydium-launchlab", "raydium", "meteora", "pump-fun", "raydium-clmm"]
     def gk(s, path, **p):
@@ -868,7 +882,7 @@ class Meme:
         if s.live and os.path.exists("KILL_solana") and (s.pos or not s.halted):
             s.halted = True; log.warning("[solana] KILL_solana file: closing REAL positions, no new buys"); [s.sell(m, "kill_switch_file") for m in list(s.pos)]
         if s.live:
-            s.reconcile()
+            s.reconcile(); s.rebase_day_start()
             if not s.halted and not getattr(s, "_halt_chk", False):
                 s._halt_chk = True
                 try:

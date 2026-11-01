@@ -5,10 +5,10 @@ Budget: <=1 req/1.2s, daily cap DAILY_CAP, token cache 15 min, deployer cache 6 
 Failure/missing key => neutral (None)."""
 import os, json, time, urllib.request
 BASE = "https://data.solanatracker.io"
-DAILY_CAP = int(os.environ.get("ST_DAILY_CAP", "400"))
+DAILY_CAP = int(os.environ.get("ST_DAILY_CAP", "300"))   # 01-nov: free plan ~10k/month = ~330/day; 400 exhausted the month early and the ALT gate went neutral all day
 CACHE_F = "data/st_cache.json"; SHADOW_F = "data/st_shadow.jsonl"; BUDGET_F = "data/st_budget.json"
 TTL = {"tokens": 3600, "deployer": 86400, "price": 300}   # 01-nov: longer cache (risk/creator data moves slowly)
-DAEMON_CAP = int(os.environ.get("ST_DAEMON_CAP", "120"))   # shadow daemon may not starve the live bot
+DAEMON_CAP = int(os.environ.get("ST_DAEMON_CAP", "60"))   # shadow daemon may not starve the live bot (research only: the bot keeps >= 240/day)
 OWNER = ["bot"]
 VETO_PCT = 22.0
 _last = [0.0]

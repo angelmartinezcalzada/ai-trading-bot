@@ -96,3 +96,12 @@ Lo que **nunca** hace nada automático: relajar vetos, tamaños o stops; cambiar
 | El Director apaga la jugada `scanner` | `director_log.jsonl`, `--report` | es la evidencia (PF < 1 con n ≥ 15): el bot no compra; decide si pasar a papel |
 
 Historial y razones de todo: `DIARIO.md` (lo escribe el operador cada hora, solo en tu máquina), `DECISIONS.md` (decisiones de diseño, en el repo), `director_log.jsonl`, `operator_log.jsonl`.
+
+## Solana Tracker: imprescindible para comprar en real
+Mientras el cerebro está en sombra (las primeras semanas), la única puerta de compra real es la ALT, que exige el veredicto de Solana Tracker. **Sin `SOLANATRACKER_API_KEY` en `keys.env` el bot real escanea y aprende, pero no compra nunca.** Crea una cuenta en solanatracker.io, genera una clave de la Data API (el plan gratuito, ~10k peticiones/mes, basta: el bot gasta como mucho 300/día) y guárdala así, sin pegarla nunca en chats ni en el repositorio:
+
+```bash
+cd ~/ai-trading-bot && read -r -p "Pega la clave de Solana Tracker: " K && sed -i "s|^SOLANATRACKER_API_KEY=.*|SOLANATRACKER_API_KEY=$K|" keys.env && chmod 600 keys.env && echo "guardada ($(grep -c '^SOLANATRACKER_API_KEY=.' keys.env) clave)"
+```
+
+No hace falta reiniciar: el bot lee `keys.env` en cada consulta y el supervisor arranca el daemon de sombra de Solana Tracker en menos de un minuto. En `bot_solana.log` dejarás de ver "ALT gate ... skipped: Solana Tracker verdict neutral/missing" en los candidatos con puntuación ≥ 45.
