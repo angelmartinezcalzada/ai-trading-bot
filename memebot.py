@@ -1220,7 +1220,7 @@ class Meme:
                 time.sleep(1)
         s.save(); log.info("[solana] stopped")
 def main(cfg, live):
-    if live and not (os.environ.get("SOLANA_PRIVATE_KEY") and os.environ.get("LIVE_CONFIRM") == "YES"):
-        sys.exit("Live refused: needs SOLANA_PRIVATE_KEY and LIVE_CONFIRM=YES")
+    if live and not ((os.environ.get("SOLANA_PRIVATE_KEY") or os.path.exists("solana_wallet.json")) and os.environ.get("LIVE_CONFIRM") == "YES"):
+        sys.exit("Live refused: needs solana_wallet.json (or SOLANA_PRIVATE_KEY) and LIVE_CONFIRM=YES")   # the wallet file is what signs; the env var was a leftover
     import news; news.start(120)
     Meme(cfg, live).run()

@@ -18,9 +18,9 @@ if [ -d "$DIR/.git" ]; then
   [ -f config.local.json ] && python3 tools/config_merge.py config.local.json config.json && rm -f config.local.json
 else echo "== clonando en $DIR"; git clone -q "$REPO" "$DIR"; fi
 cd "$DIR"; chmod +x *.sh tools/*.py 2>/dev/null || true
-./install.sh
 echo "== parando cualquier instancia anterior (bots y supervisores)"; ./stop.sh >/dev/null 2>&1 || true; sleep 3
-pkill -f "run_foreve[r].sh" 2>/dev/null || true; pkill -f "python3 bot.p[y] --exchange" 2>/dev/null || true; sleep 1
+pkill -f "run_foreve[r].sh" 2>/dev/null || true; pkill -f "python3 bot.p[y] --exchange" 2>/dev/null || true; pkill -f "python3 dashboar[d].py" 2>/dev/null || true; sleep 1
+./install.sh
 rm -f STOP; nohup setsid ./run_forever.sh >/dev/null 2>&1 &
 sleep 8; ./status.sh 2>/dev/null | head -8 || true
 echo; echo "== listo. Panel desde Windows: http://localhost:8787/   contraseña: $(cat dashboard_password.txt)"
