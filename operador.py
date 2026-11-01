@@ -2,8 +2,8 @@
 """operador.py (no "operator": ese nombre es un módulo de la librería estándar). Operador automático: el "director financiero" que antes era una persona o una IA externa, ahora código.
 
 Cada hora (run_forever.sh) hace lo que hacía la revisión horaria: mira la salud de cada proceso, el patrimonio, los escaneos,
-los errores, el Director, el cerebro, el riesgo de Hyperliquid y el estado de las cuentas de token; lo escribe en DECISIONS.md
-con el mismo formato que las revisiones anteriores; guarda operator_state.json para el panel; y emite alerts.jsonl (y, si existe
+los errores, el Director, el cerebro, el riesgo de Hyperliquid y el estado de las cuentas de token; lo escribe en DIARIO.md (diario local de la máquina, fuera de git) con el mismo formato que las revisiones
+anteriores de DECISIONS.md; guarda operator_state.json para el panel; y emite alerts.jsonl (y, si existe
 la variable ALERT_CMD, ejecuta ese comando con el texto de la alerta: webhook, Telegram, lo que sea).
 
 Acciones que toma SOLO (todas reversibles y dentro de las reglas del dueño):
@@ -17,7 +17,7 @@ Una vez al día (a partir de las 08:00) añade el informe diario con las decisio
 import os, sys, json, time, signal, subprocess, datetime as dt, logging
 
 log = logging.getLogger("operator")
-STATE, ALERTS, LOGF = "operator_state.json", "alerts.jsonl", "operator_log.jsonl"
+STATE, ALERTS, LOGF, DIARY = "operator_state.json", "alerts.jsonl", "operator_log.jsonl", "DIARIO.md"
 HUNG_S, RESTART_EVERY_S, ATA_EVERY_S, DIRECTOR_MAX_AGE_S = 600, 3600, 6 * 3600, 2 * 3600
 LOG_ROTATE_BYTES, LOG_KEEP_BYTES, ALERT_DEDUPE_S, DAILY_HOUR = 50_000_000, 5_000_000, 6 * 3600, 8
 
@@ -227,7 +227,7 @@ def run_once(root, now=None, dry_run=False, force_daily=False, overview=None):
     text = entry_text(findings, summary, actions, now, daily)
     alerted = [f["code"] for f in findings if f["level"] in ("crit", "warn") and not dry_run and alert(root, state, f, now)]
     if not dry_run:
-        with open(os.path.join(root, "DECISIONS.md"), "a", encoding="utf-8") as fh: fh.write("\n" + text)
+        with open(os.path.join(root, DIARY), "a", encoding="utf-8") as fh: fh.write("\n" + text)   # local diary (untracked): git pull never conflicts
         with open(os.path.join(root, LOGF), "a") as fh: fh.write(json.dumps({"t": now, "findings": findings, "actions": actions, "daily": bool(daily)}, default=str) + "\n")
         state.update(ts=now, findings=findings, summary=summary, actions=actions, alerted_now=alerted, daily_written=bool(daily))
         _atomic_json(os.path.join(root, STATE), state)

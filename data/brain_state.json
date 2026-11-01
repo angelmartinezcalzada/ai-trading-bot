@@ -1,180 +1,184 @@
 {
- "updated": "2026-10-31T18:05:34",
- "n_labelled": 715,
- "active": true,
+ "updated": "2026-11-01T21:18:00",
+ "n_labelled": 554,
+ "active": false,
+ "active_votes": 0,
  "oos": {
-  "n_test": 215,
-  "brain_trades": 124,
-  "brain_avg_ret_%": 1.8,
-  "baseline_trades": 21,
-  "baseline_avg_ret_%": -4.2,
-  "all_avg_ret_%": 1.28
+  "n_test": 167,
+  "brain_trades": 0,
+  "brain_mints": 0,
+  "brain_avg_ret_%": null,
+  "baseline_trades": 15,
+  "baseline_avg_ret_%": -7.3,
+  "all_avg_ret_%": -5.05,
+  "purged_train_rows": 30,
+  "policy": "ev>0.01 and score>=45"
  },
- "base": 0.63,
+ "base": 0.168,
  "weights": {
-  "bots": {
-   "p_on": 0.642,
-   "p_off": 0.63,
-   "n_on": 193,
-   "n_off": 522,
-   "ret_on_%": 0.88
-  },
-  "liq_growth": {
-   "p_on": 0.626,
-   "p_off": 0.642,
-   "n_on": 393,
-   "n_off": 322,
-   "ret_on_%": 0.57
-  },
-  "m5_neg": {
-   "p_on": 0.691,
-   "p_off": 0.628,
-   "n_on": 57,
-   "n_off": 658,
-   "ret_on_%": 3.38
-  },
-  "young": {
-   "p_on": 0.543,
-   "p_off": 0.671,
-   "n_on": 206,
-   "n_off": 509,
-   "ret_on_%": 0.01
-  },
-  "momentum": {
-   "p_on": 0.482,
-   "p_off": 0.717,
-   "n_on": 252,
-   "n_off": 463,
-   "ret_on_%": -1.24
-  },
   "insider_sell": {
-   "p_on": 0.637,
-   "p_off": 0.633,
-   "n_on": 14,
-   "n_off": 701,
-   "ret_on_%": 1.13
-  },
-  "score_hi": {
-   "p_on": 0.357,
-   "p_off": 0.668,
-   "n_on": 72,
-   "n_off": 643,
-   "ret_on_%": -5.44
-  },
-  "insiders": {
-   "p_on": 0.612,
-   "p_off": 0.66,
-   "n_on": 396,
-   "n_off": 319,
-   "ret_on_%": 1.39
-  },
-  "holder_growth": {
-   "p_on": 0.58,
-   "p_off": 0.643,
-   "n_on": 106,
-   "n_off": 609,
-   "ret_on_%": 1.15
-  },
-  "narrative": {
-   "p_on": 0.641,
-   "p_off": 0.633,
-   "n_on": 70,
-   "n_off": 645,
-   "ret_on_%": 2.82
-  },
-  "buy_press": {
-   "p_on": 0.66,
-   "p_off": 0.588,
-   "n_on": 454,
-   "n_off": 261,
-   "ret_on_%": 1.19
-  },
-  "whale_sells": {
-   "p_on": 0.679,
-   "p_off": 0.632,
-   "n_on": 14,
-   "n_off": 701,
-   "ret_on_%": 3.57
-  },
-  "velocity": {
-   "p_on": 0.478,
-   "p_off": 0.658,
-   "n_on": 91,
-   "n_off": 624,
-   "ret_on_%": -1.65
-  },
-  "insider_conv": {
-   "p_on": 0.652,
-   "p_off": 0.633,
-   "n_on": 15,
-   "n_off": 700,
-   "ret_on_%": 1.67
-  },
-  "deep_liq": {
-   "p_on": 0.74,
-   "p_off": 0.466,
-   "n_on": 439,
-   "n_off": 276,
-   "ret_on_%": 1.77
-  },
-  "h1_hot": {
-   "p_on": 0.463,
-   "p_off": 0.669,
-   "n_on": 118,
-   "n_off": 597,
-   "ret_on_%": -1.08
-  },
-  "insider_elite": {
-   "p_on": 0.652,
-   "p_off": 0.633,
-   "n_on": 15,
-   "n_off": 700,
-   "ret_on_%": 1.67
-  },
-  "whale_buys": {
-   "p_on": 0.665,
-   "p_off": 0.632,
-   "n_on": 19,
-   "n_off": 696,
-   "ret_on_%": 2.1
-  },
-  "heat_hot": {
-   "p_on": 0.595,
-   "p_off": 0.642,
-   "n_on": 125,
-   "n_off": 590,
-   "ret_on_%": -0.41
-  },
-  "vol_liq_hi": {
-   "p_on": 0.582,
-   "p_off": 0.694,
-   "n_on": 386,
-   "n_off": 329,
-   "ret_on_%": 0.64
+   "p_on": 0.119,
+   "p_off": 0.167,
+   "n_on": 21,
+   "n_off": 533,
+   "ret_on_%": -47.53
   },
   "uniq_buyers": {
-   "p_on": 0.611,
-   "p_off": 0.639,
-   "n_on": 128,
-   "n_off": 587,
-   "ret_on_%": 0.55
+   "p_on": 0.117,
+   "p_off": 0.171,
+   "n_on": 64,
+   "n_off": 490,
+   "ret_on_%": -11.95
   },
-  "conc_falling": {
-   "p_on": 0.597,
-   "p_off": 0.635,
-   "n_on": 29,
-   "n_off": 686,
-   "ret_on_%": 2.29
+  "score_hi": {
+   "p_on": 0.137,
+   "p_off": 0.169,
+   "n_on": 68,
+   "n_off": 486,
+   "ret_on_%": -17.1
+  },
+  "narrative": {
+   "p_on": 0.13,
+   "p_off": 0.17,
+   "n_on": 72,
+   "n_off": 482,
+   "ret_on_%": -5.89
+  },
+  "insider_elite": {
+   "p_on": 0.123,
+   "p_off": 0.167,
+   "n_on": 20,
+   "n_off": 534,
+   "ret_on_%": -49.59
+  },
+  "deep_liq": {
+   "p_on": 0.177,
+   "p_off": 0.147,
+   "n_on": 315,
+   "n_off": 239,
+   "ret_on_%": -9.18
+  },
+  "vol_liq_hi": {
+   "p_on": 0.119,
+   "p_off": 0.209,
+   "n_on": 274,
+   "n_off": 280,
+   "ret_on_%": -7.38
+  },
+  "liq_growth": {
+   "p_on": 0.135,
+   "p_off": 0.211,
+   "n_on": 343,
+   "n_off": 211,
+   "ret_on_%": -6.95
+  },
+  "insiders": {
+   "p_on": 0.165,
+   "p_off": 0.163,
+   "n_on": 370,
+   "n_off": 184,
+   "ret_on_%": -6.79
   },
   "socials": {
-   "p_on": 0.484,
-   "p_off": 0.7,
-   "n_on": 216,
-   "n_off": 499,
-   "ret_on_%": -1.64
+   "p_on": 0.213,
+   "p_off": 0.124,
+   "n_on": 251,
+   "n_off": 303,
+   "ret_on_%": -3.36
+  },
+  "heat_hot": {
+   "p_on": 0.169,
+   "p_off": 0.163,
+   "n_on": 154,
+   "n_off": 400,
+   "ret_on_%": -5.17
+  },
+  "whale_buys": {
+   "p_on": 0.278,
+   "p_off": 0.159,
+   "n_on": 14,
+   "n_off": 540,
+   "ret_on_%": -4.82
+  },
+  "velocity": {
+   "p_on": 0.185,
+   "p_off": 0.159,
+   "n_on": 107,
+   "n_off": 447,
+   "ret_on_%": -13.8
+  },
+  "bots": {
+   "p_on": 0.132,
+   "p_off": 0.173,
+   "n_on": 109,
+   "n_off": 445,
+   "ret_on_%": -6.63
+  },
+  "conc_falling": {
+   "p_on": 0.307,
+   "p_off": 0.154,
+   "n_on": 28,
+   "n_off": 526,
+   "ret_on_%": -2.12
+  },
+  "insider_conv": {
+   "p_on": 0.123,
+   "p_off": 0.167,
+   "n_on": 20,
+   "n_off": 534,
+   "ret_on_%": -49.59
+  },
+  "whale_sells": {
+   "p_on": 0.318,
+   "p_off": 0.159,
+   "n_on": 11,
+   "n_off": 543,
+   "ret_on_%": 0.73
+  },
+  "buy_press": {
+   "p_on": 0.157,
+   "p_off": 0.176,
+   "n_on": 350,
+   "n_off": 204,
+   "ret_on_%": -12.64
+  },
+  "h1_hot": {
+   "p_on": 0.136,
+   "p_off": 0.172,
+   "n_on": 113,
+   "n_off": 441,
+   "ret_on_%": -20.66
+  },
+  "holder_growth": {
+   "p_on": 0.192,
+   "p_off": 0.159,
+   "n_on": 77,
+   "n_off": 477,
+   "ret_on_%": -23.86
+  },
+  "young": {
+   "p_on": 0.152,
+   "p_off": 0.171,
+   "n_on": 179,
+   "n_off": 375,
+   "ret_on_%": -17.4
+  },
+  "momentum": {
+   "p_on": 0.131,
+   "p_off": 0.193,
+   "n_on": 255,
+   "n_off": 299,
+   "ret_on_%": -4.88
+  },
+  "m5_neg": {
+   "p_on": 0.21,
+   "p_off": 0.162,
+   "n_on": 17,
+   "n_off": 537,
+   "ret_on_%": -25.61
   }
  },
- "avg_win": 0.0693,
- "avg_loss": 0.0981,
- "n": 715
+ "avg_win": 0.098,
+ "avg_loss": 0.1281,
+ "n": 554
 }

@@ -68,7 +68,7 @@ def test_run_once_writes_decisions_state_log_and_alerts(root):
     d, now = root
     r = op.run_once(d, now=now)
     assert "revisión horaria" in r["text"] and "(operador automático)" in r["text"] and "- Salud:" in r["text"] and "- Acciones:" in r["text"]
-    txt = open(os.path.join(d, "DECISIONS.md"), encoding="utf-8").read(); assert "(operador automático)" in txt
+    txt = open(os.path.join(d, op.DIARY), encoding="utf-8").read(); assert "(operador automático)" in txt
     st = json.load(open(os.path.join(d, op.STATE))); assert st["ts"] == now and st["findings"] and "solana_down" in st["alerted_now"]
     al = [json.loads(l) for l in open(os.path.join(d, op.ALERTS))]; assert any(a["code"] == "solana_down" for a in al)
     r2 = op.run_once(d, now=now + 60); assert "solana_down" not in r2["alerted"]              # deduped for 6 h
@@ -78,9 +78,9 @@ def test_run_once_writes_decisions_state_log_and_alerts(root):
 
 
 def test_dry_run_writes_nothing(root):
-    d, now = root; before = os.path.exists(os.path.join(d, "DECISIONS.md")); st0 = open(os.path.join(d, op.STATE)).read()   # the fixture ships a state file
+    d, now = root; before = os.path.exists(os.path.join(d, op.DIARY)); st0 = open(os.path.join(d, op.STATE)).read()   # the fixture ships a state file
     r = op.run_once(d, now=now, dry_run=True)
-    assert r["findings"] and os.path.exists(os.path.join(d, "DECISIONS.md")) == before and open(os.path.join(d, op.STATE)).read() == st0
+    assert r["findings"] and os.path.exists(os.path.join(d, op.DIARY)) == before and open(os.path.join(d, op.STATE)).read() == st0
     assert not os.path.exists(os.path.join(d, op.LOGF))
 
 

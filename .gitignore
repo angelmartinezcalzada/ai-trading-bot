@@ -27,3 +27,10 @@ __pycache__/
 *.pyc
 .pytest_cache/
 state/
+DIARIO.md
+config.local.json
+data/st_budget.json
+st_shadow.jsonl
+research/st_shadow.jsonl
+data/st_forward.jsonl
+panel_v2_state.json

@@ -12,6 +12,7 @@ BINANCE_API_SECRET=
 COINBASE_API_KEY=
 COINBASE_API_SECRET=
 COINVERSA_API_KEY=
+SOLANATRACKER_API_KEY=
 # ALERT_CMD: comando que recibe el texto de cada alerta por stdin (webhook, Telegram...). Ejemplo: ALERT_CMD='curl -s -X POST -d @- https://...'
 K
   chmod 600 keys.env; echo "== keys.env creado (vacío): rellena las claves que uses"

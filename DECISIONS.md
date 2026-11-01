@@ -594,6 +594,78 @@ Backups: memebot.py / copytrade_paper.py / config.json / DECISIONS.md .bak_rugpu
 - Decisión: NO se promueve — mejora pequeña, inconsistente entre cortes y no arregla el error principal (pérdidas −15% con `insiders`). Se mantiene el modelo actual. Sin cambios en código, config, tamaño, stops ni vetos; sin reinicios.
 - Próxima vez: probar interacción `insiders`+`vol_liq_hi` / pesar más la señal insiders; re-evaluar `chase` con más datos.
 
+## 2026-10-31 18:59 (Madrid) — revisión horaria (director financiero)
+- Salud: Binance paper, Coinbase live (halted), Solana REAL (proceso 18:26), panel, insider (logs en ráfagas, último 18:33, normal), copytrade paper vivos. Logs frescos (18:51-18:58). Sin reinicios. 0 errores nuevos Solana; avisos "pump paper loop Expecting value" ya 17 (DexScreener vacío, inofensivo).
+- Equity: Binance 998.80 (bear). Coinbase halted. Solana REAL 48.54 USD, todo cash, 0 abiertas (SOL 95.97). Cierres REAL: 0 (último 01:19, ~17.5 h).
+- Pump-paper: 6 cierres, 0 ganadores, neto suma −9.14% (todos por tiempo 25 min; coste 1-2.6% > movimiento). 1 abierta (Fartcoin). Muestra <20: sin cambios, pero tendencia mala.
+- Copytrade PAPER: Mischief +0.17 (time) 18:21; sigue no apto para real.
+- Cambios: ninguno.
+- Próxima vez: si pump-paper sigue sin ganadores a ~10 cierres, revisar en papel salida por tiempo (25 min) vs coste; nada de dinero real.
+
+## 2026-10-31 19:36 — Prueba on-chain de LP para pools PumpSwap (OK de Àngel)
+- Nuevo `lpcheck.py`; se usa solo en `rug_fallback` (cuando RugCheck falla) si el pool principal no es Standard.
+- PumpSwap: se lee la cuenta del pool (owner = pAMMBay6…), se comprueba base/quote = mint, y lp_burned% = 1 − supply actual del LP mint / lp_supply del pool. Debe ser ≥90% (umbral existente). Solo cuenta si el pool PumpSwap tiene ≥80% de la liquidez del token.
+- CLMM / Whirlpool / DLMM: siguen rechazados (las posiciones NFT no se pueden enumerar de forma fiable con RPC público, ya que getProgramAccounts/indexed requiere token). Cualquier error = 0% = rechazo.
+- Tests: CATE, neet, GATO, USOE → 100% quemado (supply LP = 0); DJT (orca) → 0; STONK (meteora) → sin pool PumpSwap → 0.
+- Backtest: en la era fallback, 5 monedas PumpSwap tenían "lp_unlocked" como único veto (GATO, DESSA, neet, CATE, USOE). Con RugCheck activo ya daban 100%.
+- El resto de vetos, tamaño 8%, stop −6% y trail 12% no cambian. Backup: memebot.py.bak_lpclmm. Reiniciado a las 19:36 sin posiciones abiertas.
+
+## 2026-10-31 19:57 (Madrid) — revisión horaria (director financiero)
+- Salud: Binance paper, Coinbase live (halted), Solana REAL (proceso 19:36 tras lpcheck), panel, insider, copytrade paper (19:00) vivos. Logs frescos. Sin reinicios. 0 errores Solana; avisos "Expecting value" de DexScreener 33 (inofensivo).
+- Equity: Binance 998.80 (bear). Coinbase 3.36 halted. Solana REAL 48.54 USD, todo cash, 0 abiertas. Cierres REAL: 0 (último 01:19, ~18.5 h). lpcheck PumpSwap aún sin aprobar ninguna entrada.
+- Pump-paper: 10 cierres, 0 ganadores, neto suma −19.06% (media −1.9%). Todos por tiempo 25 min. Bruto medio ≈ −0.15% (máx +2.4%) vs coste 1.1-3.0%: el setup no se mueve lo bastante para cubrir costes; cambiar la salida no lo arregla.
+- Cambios: ninguno (muestra <20 y es papel). Lejos del criterio de dinero real (PF>1.3).
+- Próxima vez: a 20 cierres, si PF sigue ~0, proponer a Àngel apagar pump-paper o exigir movimiento esperado > 3x coste en la entrada.
+
+## 2026-10-31 20:35 (Madrid) — mejora continua del modelo (rutina 2 h)
+- Autocrítica:
+  1) Operativo: 0 entradas REALES desde 01:19 (~19 h). Rechazos últimas 2 h (liq≥50k, 1204 candidatos): top10 786, rugcheck_danger 534, mint_authority 287, few_holders 212, lp_unlocked 202, freeze 184. Son los vetos anti-scam, no el modelo; sin tocar.
+  2) Pump-paper (papel): 14 cierres, 1 ganador (BORGY +1.98% neto); todos por tiempo 25 min y todos con `rug_insiders`. Coste 1.2-2.9% > movimiento. Es el peor error vivo, pero es papel y ya hay criterio (20 cierres / PF>1.3).
+  3) Peores entradas OOS del modelo actual (corte 70/30): BEAST −13.6%, XTO −12.3/−11.4%, IOF −11.5% ×2. Patrón común: `young` + `h1_hot` (+ buy_press): entrar persiguiendo una subida en monedas de <24 h. La señal `insiders` ya no explica las pérdidas (on: +1.33%/tr, off: +1.38%/tr).
+  4) Ganadores perdidos OOS: HI +29.8% (EV −0.05%), jeff +22% (EV −2.7%), HI +22% (EV +0.61%): EV mínimo 1% algo conservador.
+  5) Datos: 721 muestras etiquetadas (caché OHLCV 3 días, ventana móvil). Copytrade papel sin cierres nuevos.
+- Reentreno (mismo Brain K=10/DAMP=0.3/EV>1%), cortes temporales. Actual: 50/50 145 tr +1.45% PF 2.48; 60/40 113 tr +1.00% PF 1.66; 70/30 84 tr +1.34% PF 1.91; 80/20 67 tr +0.87% PF 1.55.
+- Mejoras probadas:
+  a) `ins_volhi` (insiders y vol_liq_hi, idea anterior): peor en los 4 cortes (p.ej. 70/30 +0.25% PF 1.13).
+  b) `ins_buyp` (insiders y buy_press): peor en 3 de 4.
+  c) `young_hot` (young y h1_hot, dirigida al error 3): 50/50 +1.46% PF 2.53, 60/40 +1.06% PF 1.73, 80/20 +1.67% PF 2.21, pero 70/30 PIERDE (+0.99% PF 1.60). Peor pérdida sin cambio (−14%).
+  d) `hot_sell` (h1_hot e insider_sell): igual o peor.
+- Decisión: NO se promueve ninguna (ninguna gana en todos los cortes). Se mantiene el modelo actual. Sin cambios en código, config, tamaño, stops ni vetos; sin reinicios.
+- Próxima vez: re-evaluar `young_hot` con más datos (prometedor en 3/4 cortes); probar umbral EV dependiente de liquidez/coste.
+
+## 2026-10-31 21:00 (Madrid) — revisión horaria (director financiero)
+- Salud: Binance paper, Coinbase live (halted), Solana REAL (proceso 19:36), panel, insider, copytrade paper vivos. Logs frescos (20:59). Sin reinicios. 0 tracebacks Solana; avisos "Expecting value" DexScreener 44 (inofensivo).
+- Equity: Binance 998.80 (bear). Solana REAL 48.38 USD, todo cash, 0 abiertas (baja por precio SOL 95.66). Cierres REAL: 0 (último 01:19, ~20 h). Último scan: 60 con liquidez, 0 pasan filtros.
+- Pump-paper: alcanzados 20 cierres. 2 ganadores, neto suma −40.1% (media −2.0%), PF 0.06. Bruto medio −0.16% vs coste 1.1-3.0%. Todos salida por tiempo, todos `rug_insiders`. Criterio de dinero real (PF>1.3) muy lejos.
+- Cambios: ninguno (es papel; decisión de apagar/endurecer se propone a Àngel).
+- Propuesta: apagar pump-paper o exigir en la entrada movimiento esperado > 3x coste ida y vuelta.
+- 2026-10-31 21:40 pump_paper=false por orden de Àngel tras 20 cierres en papel (PF 0,06).
+
+## 2026-10-31 21:59 (Madrid) — revisión horaria (director financiero)
+- Salud: Binance paper, Coinbase live (halted), Solana REAL (reinicio 21:40 por pump_paper=false), panel, insider, copytrade paper vivos. Logs frescos (21:54). 0 tracebacks. Sin reinicios por mi parte.
+- Equity: Binance 998.80 (bear). Solana REAL 48.30 USD, todo cash, 0 abiertas (SOL 95.49). Cierres REAL: 0 (último 01:19, ~21 h). Último scan: 60 con liquidez, 0 pasan filtros (vetos anti-scam).
+- Pump-paper apagado confirmado: sin cierres nuevos tras 21:33.
+- Cambios: ninguno (sin muestra nueva).
+- Próxima vez: vigilar si sigue la sequía de entradas reales; revisar qué veto domina sin relajar los anti-scam.
+
+## 2026-10-31 22:30 (Madrid) — mejora continua del modelo (rutina 2 h)
+- Autocrítica:
+  1) Operativo: 0 entradas REALES desde 01:19 (~21 h); último scan 60 con liquidez, 0 pasan (vetos anti-scam). Pump-paper apagado 21:40. Sin tocar vetos.
+  2) Peores entradas OOS del modelo (70/30, EV>1%): swordcat −14.1% (insiders+deep_liq), XTO −12.3/−11.4/−11.3%, IOF −11.5% ×2. Patrón: `young`+`h1_hot`+`buy_press` (perseguir subidas en monedas <24 h). Coste ida y vuelta medio: perdedoras 1.11% vs ganadoras 0.76%.
+  3) Ganadores perdidos: HI +29.8/+22%, jeff +21.8%, TYGR +21.8% (EV −1.9% a +0.2%).
+  4) Datos: 723 muestras etiquetadas (+2).
+- Reentreno (Brain K=10/DAMP=0.3/EV>1%). Actual solo-modelo: 50/50 184 tr +1.92% PF 2.88; 60/40 116 +1.45% PF 2.46; 70/30 87 +0.93% PF 1.71; 80/20 58 +1.27% PF 2.83.
+- Mejoras probadas: `young_hot`, umbral EV dependiente del coste (0.3/0.5/1×rt) y combinación. La combinación `young_hot` + EV>0.5%+0.5×coste gana en los 4 cortes solo-modelo (p.ej. 70/30 +0.98% PF 1.89; 60/40 +1.77% PF 4.19).
+- PERO con la puerta real que ya usa el bot en vivo (EV ≥ 3× coste medido), el umbral por coste es redundante y `young_hot` PIERDE en 3 de 4 cortes (60/40 +0.97% PF 4.39 vs +1.06% PF 5.65; 70/30 +0.84% PF 4.81 vs +0.89% PF 5.68; 80/20 +1.07% PF 8.66 vs +1.22% PF 24.9). Nota clave: con esa puerta la peor pérdida OOS ya baja de −14% a −2.9/−5%: el error de las pérdidas grandes ya está cubierto en vivo.
+- Decisión: NO se promueve. Se mantiene el modelo actual. Sin cambios en código, config, tamaño, stops ni vetos; sin reinicios. Script: research/brain_cycle_2230.py.
+- Próxima vez: evaluar siempre con la puerta viva (EV≥3×coste); con ella el cuello de botella es la falta de entradas, no las pérdidas; mirar ganadores perdidos (HI, jeff, TYGR) bajo esa puerta.
+
+## 2026-10-31 23:05 (Madrid) — revisión horaria (director financiero)
+- Salud: Binance paper, Coinbase live (halted), Solana REAL, panel, insider, copytrade paper vivos. Logs frescos (23:04). 0 tracebacks Solana. Sin reinicios.
+- Equity: Binance 998.80 (bear, swing apagado por filtro BTC). Coinbase 3.36 halted. Solana REAL 48.52 USD, todo cash, 0 abiertas (SOL 95.92). Cierres REAL: 0 (último 01:19, ~22 h). Último scan: 339 mints, 60 con liquidez, 0 pasan filtros (vetos anti-scam).
+- Pump-paper apagado; copytrade papel sin cierres desde 18:21.
+- Cambios: ninguno (sin muestra nueva; no se relajan vetos anti-scam).
+- Próxima vez: seguir vigilando la sequía de entradas reales.
 ## 2026-10-31 20:05 (Madrid) — MVP Hyperliquid con Keel + Coinversa (sesión autónoma de Claude; Àngel: "usa Keel y Coinversa, mejora hasta un MVP que dé muy buen rendimiento")
 - Diagnóstico con backtests (Keel, Hyperliquid perps, 4,5 pb + 4,5 pb + funding): la MISMA regla de tendencia sobre 18 memecoins en perps da Sharpe 0,70 / DD −53 % (PF 1,11) frente a Sharpe 1,84 / DD −30 % sobre los 15 mayores perps. El problema del bot es el universo memecoin, no la ejecución. Spec: docs/superpowers/specs/2026-10-31-trading-bot-mvp-design.md.
 - 6 estrategias (4 forks de la librería Keel + 2 diseños propios) y variantes, in-sample 2024-08-15→2026-03-31 y fuera de muestra 2026-04-01→2026-10-30 (sin tocar parámetros con la OOS). ELEGIDA: SuperTrend(10,3)+Bollinger+ATR7/21>0,85, 1d, long-only, top-15, 33 %/nombre, 1x, on_change → IS 1,69 / OOS **1,98, +105 %, DD −30 %, PF 1,70**; ventana completa 1,74, +773 %, DD −36,8 %, 8/10 trimestres positivos (no 9/10 como se escribió primero); multiplicador 2,4/3,0/3,6 → 1,59/1,74/1,79. **CORREGIDO a las 21:45 (ver entrada siguiente): estos números llevan supervivencia del universo; los honestos son OOS 1,15 / ventana completa 0,76.** Rechazadas: confluence 4h (IS 1,85 → OOS 0,53), momentum+funding (robusta, 1,99 OOS, pero exige ~15.000 $), rotación top-3 (0,43), estocástico (0,78), meme-perps (0,70). Registro: hl_leg/evidence.json; fuentes DSL en hl_leg/strategies/.
@@ -636,6 +708,212 @@ Backups: memebot.py / copytrade_paper.py / config.json / DECISIONS.md .bak_rugpu
 - Pendiente para Àngel (no aplicado): memebot a papel; puerta del cerebro (score ≥ 45 vs modelo); stop diario en SOL; cierre de ATAs vacías; registro de posiciones que `reconcile` descarta; decidir si la puerta EV queda como está (ver arriba).
 - Tests: 51 pasan (`python3 -m pytest -q tests/`). Cuota Keel: 43 de 75 backtests restantes en el periodo (18 de la primera semana).
 
+## 2026-10-31 23:08–23:20 — Instalación traspaso Claude (opción B, zip) — Grok
+- Aprobado por Àngel: instalar con la puerta EV nueva (outAmount, más laxa).
+- Parada sin posiciones abiertas (open=[]), sin venta en curso. Backup completo: /workspace/ai-trading-bot.bak_2026-10-31_2308.
+- Copiados según HANDOFF §2: memebot, scam, brain, eval_solana, live_sol, copytrade_paper, copytrade_rules, news, insider, dashboard, run_forever.sh, PLAYBOOK, README, HANDOFF_GROK; hl_leg/, tests/, research/coinversa*. Eliminado hyperliquid/. NO tocados config.json, data/, state_*, trades_*, keys.env, wallet, dashboard_password, brain_state.
+- Diferencia: el memebot.py nuevo no incluía la integración lpcheck (prueba LP-burn PumpSwap en rug_fallback). Re-añadida tras el cálculo de `lp` (mismo bloque de antes, fail-closed).
+- config: pump_play=false, pump_paper=false (sin cambios).
+- Tests: `python3 -m pytest -q tests/` → 51 passed in 1.25s.
+- Reinicio con run_forever.sh + copytrade_paper.py (aparte, como antes). insider_loop.sh antiguo retirado (run_forever ya lanza insider). 6 procesos, sin duplicados.
+- Vigilancia 12 min: prefilter/rugcheck 1–21 s (≤150 s), sin tracebacks nuevos, modo REAL confirmado (8%, −6%, trail 12%). 0 compras (0 pasan filtros). El logger Coinversa de run_forever queda inactivo (no hay key).
+- 2026-10-31 23:35 Àngel autoriza impacto de compra hasta 5% (antes 1%). max_buy_impact_pct=5 (defecto en código).
+
+## 2026-10-31 23:50 — Panel móvil reconstruido (solo panel, sin tocar trading/config/claves) — Grok
+- Causa: /live (live_view.py) hacía polling cada 1,5 s sin control de peticiones en vuelo ni timeout; a través de Tailscale Funnel en el móvil las peticiones se acumulaban y el navegador redibujaba todo (DOM + canvas) en cada tick → bloqueos. Además mostraba poca información. El servidor en sí respondía rápido (Flask threaded, 2–40 ms).
+- Nuevo panel_v2.py + panel_v2.html en /live: API /api/live2 cacheada 4 s, lectura solo de colas de ficheros (~35 ms en frío, ~2 ms en caché); refresco cada 12 s, una sola petición a la vez, timeout 8 s, pausa con la pestaña oculta, gráfico solo se redibuja si cambia.
+- Muestra: saldo/P&L día + curva 48 h, posiciones (entrada, P&L, stop −6 %, trailing), escaneos (evaluadas/pasan), motivos de rechazo 24 h, compras bloqueadas, operaciones reales, salud de procesos, cerebro, Coinbase/Binance, últimas DECISIONS.
+- Panel antiguo en /live_old; avanzado sigue en /panel. Backups: dashboard.py.bak_panel, live_view.py.bak_panel. Solo se reinició dashboard.py (run_forever lo relanza).
+
+## 2026-10-31 23:50 Acceso remoto al panel
+- Funnel inestable: el proxy sandbox (198.18.0.1) corta TLS (handshake EOF) y PollNetMap EOF; el host también 'duerme' (time jump).
+- Probado cloudflared quick tunnel --protocol http2: el proxy corta TLS a argotunnel :7844 -> HTTP 530. SSH (localhost.run) también bloqueado. Watchdog tunnel_watchdog.sh creado pero parado. Sin cambios en trading/config/claves.
+
+## 2026-11-01 00:05 — Revisión horaria CFO — Grok
+- Salud: 6 procesos vivos (run_forever, solana, binance, coinbase, insider, dashboard, copytrade_paper), logs frescos, 0 errores/tracebacks. Sin reinicios.
+- Solana REAL: equity 48,21 $, sin posiciones; 0 compras desde la instalación de las 23:08. Bloqueos: PAWCAT (impacto 1,27 % > 1 %, antes del cambio a 5 %), AAPLCAT (requiere 510 bps de slippage > máximo). Binance/Coinbase sin operaciones nuevas.
+- Sin cambios (muestra insuficiente). Próxima vez: vigilar si la puerta EV/impacto 5 % genera compras y su resultado.
+- 2026-11-01 00:11 Àngel: tope slippage compra 5% y aceptar si se pasa por poco -> max_buy_slip_bps=550, max_buy_impact_pct=5.5.
+
+## 2026-11-01 00:26 — X buzz signal (owner OK: "Sí, añade la señal de X")
+- New: x_buzz_candidates.py, x_buzz_score.py, X_BUZZ_ROUTINE.md, data/x_buzz.json (written by a 15-min routine with the x MCP tools).
+- memebot.x_buzz_adj: score points only (+2..+6 genuine buzz, −3 shill-heavy), applied AFTER brain sizing; vetoes in f untouched; size and stops use the pre-X score (score_noX); missing/stale(>45 min)/broken file = 0. Buy log reason shows x=+N.
+- Test run 00:25: cashtag search is noisy (X ignores '$'), so only posts naming the mint or literal $SYM count. Top: JUP 47, AAPLCAT 33 (shill 0.36, one VIP-telegram caller), PAWCAT 25 (shill 0.53 → would get −3). Nobody reached the +bonus bar.
+- Backup memebot.py.bak_xbuzz. Tests 52/52.
+
+## 2026-11-01 00:30 (Madrid) — mejora continua del modelo (rutina 2 h)
+- Autocrítica:
+  1) Operativo: 0 cierres REALES desde 01:19 del 31-oct (~23 h); sin posiciones. Bloqueos recientes de compra por impacto/slippage (PAWCAT, AAPLCAT) ya resueltos por Àngel (5 %/550 bps a las 00:11). Solana reiniciado 00:26 (señal X). Sin trades paper nuevos (pump-paper apagado).
+  2) Dataset honesto (tras las correcciones de Claude: etiquetas con salida real trail 12 %/−6 % neto, purga, máx. 6 filas/mint/día): 368 filas, 99 mints, acierto 20,7 %, media −11,4 %/op, PF 0,15. 35 filas ≤ −30 % (huecos/colapsos), dominadas por imitadores de marcas/stablecoins (Apple, NVIDIA/Nvidia, TESLA SI, Gemini, USDP, USDF, XTO/X T O, SPACEINU…) que pasan los vetos duros y entran en el universo entrenable.
+  3) Peores filas OOS: Apple −33 %, AAPLCAT −17 %, GTA6 −15 % ×3: perfil `buy_press`+`vol_liq_hi`+`young`/`h1_hot` (perseguir subidas de imitadores).
+  4) Ganadores perdidos: XTO +40/+36/+31 % (el mismo token también da −30 % o peor: lotería), iCoin +13 %, KIM +12 %.
+- Reentreno (Brain K=10/DAMP=0.3, puerta viva EV>max(1 %, 3×coste) y score≥45): el modelo actual selecciona 0 operaciones en los 4 cortes temporales con purga (50/60/70/80 %); EV máximo en test ≈ −17 %. brain_state: active=False (modo sombra) — correcto: no hay ventaja medible en este universo.
+- Mejoras probadas (dirigidas al error 2, colas de −100 % que hunden avg_loss): (a) hiperparámetros K∈{5,10,20} × DAMP∈{0,2;0,3;0,5}; (b) winsorizar las pérdidas al ajustar (−30/−15/−8 %); (c) quitar el suelo de score en evaluación. Todas: 0 operaciones OOS (EV máx. −2,8 % a −9,4 % incluso con pérdidas topadas a −8 %). No hay muestras para comparar.
+- Decisión: NO se promueve nada. Se mantiene el modelo actual (sombra). Sin cambios en código, config, tamaño, stops ni vetos; sin reinicios; sin backup (nada reemplazado). Script: research/brain_cycle_0030.py.
+- Para Àngel/CFO (no aplicado, solo endurecería): un veto de imitadores de marca/stablecoin por nombre (ya existe `audit_stable_impersonator` en auditoría) eliminaría la mayoría de las colas ≤ −30 % del universo.
+- Próxima vez: re-evaluar cuando el dataset honesto tenga más filas; probar la tasa base/EV excluyendo imitadores para ver si aparece algún subconjunto con EV > 0.
+
+## 2026-11-01 00:36 — Vetos de entrada: imitadores de marca/stablecoin + ya disparada (owner OK: "Sí, aplica los dos filtros") — Grok
+- Solo endurecen. Ningún veto, tamaño ni stop relajado. Backup: memebot.py.bak_entryveto.
+- `brand_fake(sym, name)`: veto en la entrada (antes de RugCheck) para APPLE/AAPL, NVIDIA/NVDA, TESLA/TSLA, GEMINI, AMAZON, GOOGL, MSFT, BLACKROCK, PAYPAL/PYUSD, TETHER/USDT/USDC/USDP/USDF/USDE/USD1, XTO (los espacios se ignoran: "X T O"). Se suma a `stable_fake`, que se mantiene.
+- `entry_pumped`: veto si priceChange h1 > `max_entry_h1_pct` (por defecto 50). Umbral elegido con el dataset honesto (research/entry_veto_study.py), una vez quitadas las marcas: h1>50 elimina las 8 pérdidas ≤−30 % que quedaban y solo 6 de 70 ganadoras. Umbrales más bajos (h1>20/30) también eliminan las 8, pero pierden 12 y 9 ganadoras. Se descartó m5: no separa (m5>5 quita 2 colas y 12 ganadoras).
+- Backtest (368 filas): todas 76 ganadoras / 35 pérdidas ≤−30 % / media −11,4 %. Veto de marcas: −43 filas (27 colas, 6 ganadoras, todas de XTO), media −5,3 %. Con los dos vetos: 277 filas, 64 ganadoras, 0 colas, media −3,0 %. La EV sigue siendo negativa: los vetos reducen pérdidas, no crean ventaja.
+- Tests: 54 passed (nuevo tests/test_entry_veto.py). Reinicio a las 00:36 sin posiciones ni venta en curso. REAL, 8 %, −6 %, trail 12 % confirmados.
+
+## 2026-11-01 ~00:50 — Solana Tracker SHADOW signal (paper only)
+- Added solanatracker.py + st_shadow_daemon.py (separate process; memebot.py NOT modified, no restart needed). Key stored in keys.env (chmod 600, backup keys.env.bak_st).
+- Shadow veto: snipers+bundlers+dev >22% supply, insiders >22%, creator with >=3 or >=50% dead tokens (liq<100$ after 1h), or ST "rugged". Shadow prio: migrated <6h, >=300 holders, buys>sells.
+- Logs data/st_shadow.jsonl (with live pass/fail/bought), forward returns +1h/+6h/+24h in data/st_forward.jsonl. Review after 48h (~03/11 01:00) before any live use.
+- Budget: <=1 req/1.2s, cap 400 req/day, caches 15min/6h/5min. Tests: tests/test_solanatracker.py.
+- Creator rug rule tightened to >=3 AND >=50% (KIM/CATE/CLAUDIA-style 500-token deployers were false positives).
+
+## 2026-11-01 00:52 — Solana Tracker en REAL (orden de Àngel 00:49)
+- memebot: tras x_buzz, si el candidato no tiene vetos duros, `solanatracker.live_check()`: veto duro (snipers+bundles+dev >22%, insiders >22%, creador >=3 muertos y >=50%, flag rugged de ST) y +3 de score si prio (migrada <6h, >=300 holders, compras>ventas). Sin clave/API caída/presupuesto agotado = neutral. Solo endurece; tamaño 8%, stops -6%/12%, slippage/impacto sin tocar. Desactivar: `st_live: false` en config.
+- Presupuesto: mismo caché/contador que st_shadow_daemon (cap 400/día, escrituras atómicas). No se sube (plan gratis ~10k/mes ≈ 330/día).
+- run_forever.sh lanza st_shadow_daemon (con guarda anti-duplicado) → sigue el registro de retornos a futuro.
+- Tests: tests/test_st_live.py; 65 pasan. Backups *.bak_stlive.
+
+## 2026-11-01 01:01 — Revisión CFO horaria — Grok
+- Salud: todos los procesos vivos (solana, binance paper, coinbase live, insider, copytrade, dashboard, st_shadow); logs frescos; 0 errores nuevos (los avisos 6024 de venta son del 30-oct).
+- Equity: Solana REAL 48,23 $ (sin posiciones), Coinbase 3,25 $ (SOL-USD abierta), Binance paper sin operaciones desde 29-oct.
+- Hallazgo: 0 cierres REALES desde 31-oct 01:19 (~24 h). Causa estructural, no impacto/slippage: memebot.py:1061 pone `_ev=None` cuando brain_state.active=False (modo sombra), y la puerta viva (l.486) bloquea toda compra con EV None ("PAWCAT blocked: EV None%" a las 00:37 y 00:52). Mientras el cerebro siga en sombra (sin ventaja OOS), el bot REAL no comprará nada.
+- Decisión: sin cambios (relajar la puerta subiría el riesgo; requiere orden de Àngel). Se le informa.
+- Próxima vez: si Àngel decide, opciones: mantener (capital protegido), o puerta alternativa sin cerebro (p. ej. score ≥ umbral + ST pass + rt bajo) en tamaño reducido.
+
+## 2026-11-01 01:58 — Revisión CFO horaria — Grok
+- Salud: todos los procesos vivos (solana, binance, coinbase, insider, copytrade, dashboard, st_shadow; data/st_shadow.jsonl fresco); 0 errores nuevos; sin reinicios.
+- Equity: Solana REAL 48,34 $ (sin posiciones), Coinbase 3,25 $ (SOL-USD abierta, día +0,4 %), Binance paper sin operaciones.
+- Sin operaciones nuevas. PAWCAT bloqueado otra vez por EV None (01:08, 01:26, 01:43): sigue la causa estructural del cerebro en sombra, ya informada a Àngel a las 01:01.
+- Sin cambios (pendiente de decisión de Àngel). Sin informe nuevo: no hay nada nuevo.
+
+## 2026-11-01 02:30 (Madrid) — mejora continua del modelo (rutina 2 h)
+- Autocrítica:
+  1) Operativo (error principal): 0 compras/cierres REALES desde 31-oct 01:19 (~25 h). Causa ya identificada por el CFO (01:01): cerebro en sombra (active=False) → `_ev=None` → la puerta viva bloquea todo (PAWCAT bloqueado varias veces; además SMART en sombra marca PAWCAT early_exit con 12 vendedores tempranos, así que el bloqueo ahí fue acertado). Sin trades paper nuevos. Fuentes de datos: sin errores nuevos en el log.
+  2) Dataset honesto: 393 filas (+25), 99 mints, media −11,1 %/op, PF 0,15. En el universo coherente con los vetos vivos de 00:36 (sin marcas/stablecoins ni h1>50 %): 302 filas, 73 mints, media −3,3 %, PF 0,34 → los vetos recortan pérdidas pero no hay ventaja.
+- Mejora probada (dirigida al error 1: el modelo no encuentra EV>0 porque se entrena con filas que los vetos vivos ya excluyen): reentrenar solo con el universo coherente con los vetos, con K∈{5,10,20}, DAMP∈{0,3;0,5} y pérdidas topadas a −15 %, cortes temporales con purga 50/60/70/80 %.
+- Resultado OOS: modelo actual 0 operaciones en todos los cortes; candidatos 0 operaciones (EV máx. en test −5,5 % a +0,23 %, nunca por encima de la puerta max(1 %, 3×coste)). Sin muestras para comparar.
+- Decisión: NO se promueve. Se mantiene el modelo actual (sombra). Sin cambios en código, config, tamaño, stops ni vetos; sin reinicio; sin backup (nada reemplazado). Script: research/brain_cycle_0230.py.
+- Próxima vez: K=5 en el universo filtrado es el que más se acerca (EV máx. +0,23 % en corte 70 %); revaluar cuando haya más filas.
+
+## 2026-11-01 02:57 — Revisión CFO horaria — Grok
+- Salud: todos los procesos vivos (solana, binance, coinbase, insider, copytrade, dashboard, st_shadow); logs frescos; 0 errores nuevos (los contados son del 29/30-oct); sin reinicios.
+- Equity: Solana REAL 48,30 $ (sin posiciones), Coinbase 3,25 $ (SOL-USD abierta, día +0,3 %), Binance paper 998,80 (sin operaciones, régimen bear).
+- Sin operaciones nuevas. PAWCAT bloqueado otra vez por EV None (02:03): misma causa estructural (cerebro en sombra), ya informada a Àngel a las 01:01.
+- Sin cambios; sin informe (nada nuevo). Próxima vez: igual, salvo decisión de Àngel sobre la puerta EV.
+
+## 2026-11-01 03:59 — Revisión CFO horaria — Grok
+- Salud: todos los procesos vivos (solana, binance, coinbase, insider, copytrade, dashboard, st_shadow); logs frescos; 0 errores nuevos (los contados son del 29/30-oct); sin reinicios.
+- Equity: Solana REAL 48,21 $ (sin posiciones), Coinbase 3,24 $ (SOL-USD abierta, día +0,08 %), Binance paper 998,80 (sin operaciones, régimen bear).
+- Sin operaciones nuevas ni compras bloqueadas nuevas desde 02:03 (PAWCAT, EV None por cerebro en sombra; ya informado a Àngel a las 01:01).
+- Sin cambios; sin informe (nada nuevo). Próxima vez: igual, salvo decisión de Àngel sobre la puerta EV.
+
+## 2026-11-01 04:30 (Madrid) — mejora continua del modelo (rutina 2 h)
+- Autocrítica:
+  1) Operativo (error principal, sin cambios): 0 compras/cierres REALES desde 31-oct 01:19 (~27 h) y 0 paper nuevos. Cerebro en sombra (active=False) → `_ev=None` → puerta viva bloquea todo: PAWCAT bloqueado otra vez a las 04:00 y 04:18 (rt 1,0–1,4 %). SMART en sombra seguía marcando PAWCAT early_exit/whale_dump, así que el bloqueo sigue siendo razonable. Fuentes de datos: sin errores nuevos en el log.
+  2) Dataset honesto: 442 filas (+49), 102 mints, media −10,3 %/op, PF 0,15. Universo coherente con los vetos vivos: 351 filas, 76 mints, media −3,4 %, PF 0,31 (empeora ligeramente vs 02:30: −3,3 % / 0,34).
+- Mejora probada (dirigida al error 1, que el modelo no encuentra subconjunto con EV>0): nuevas features binarias de coste y calidad de entrada (rt_low <1,5 %, score_hi ≥60, h1_neg <0, h1_mid 0–20 %), universo filtrado, K∈{5,10}, DAMP 0,3, pérdidas con/sin tope −15 %, cortes temporales con purga 50/60/70/80 %.
+- Resultado OOS: modelo actual 0 operaciones en todos los cortes; candidatos también 0 (EV máx. en test −4,4 % a +0,09 %, nunca sobre la puerta max(1 %, 3×coste)). Las features nuevas no aportan separación (K=5 en corte 60 %: +0,15 % → +0,09 %). Sin muestras para comparar.
+- Decisión: NO se promueve. Se mantiene el modelo actual (sombra). Sin cambios en código, config, tamaño, stops ni vetos; sin reinicio; sin backup (nada reemplazado). Script: research/brain_cycle_0430.py.
+- Próxima vez: probar etiquetado con horizonte de salida más corto (salida rápida en el primer +x %) en vez de features nuevas; revaluar con más filas.
+
+## 2026-11-01 04:59 — Revisión CFO horaria — Grok
+- Salud: todos los procesos vivos (solana, binance, coinbase, insider, copytrade, dashboard, st_shadow); logs frescos; 0 errores nuevos en solana; sin reinicios.
+- Equity: Solana REAL 48,30 $ (sin posiciones), Coinbase 3,25 $ (SOL-USD abierta, día +0,3 %), Binance paper 998,80 (sin operaciones, régimen bear).
+- Sin operaciones nuevas. PAWCAT bloqueado otra vez por EV None (04:00, 04:18, 04:49): misma causa estructural (cerebro en sombra), ya informada a Àngel a las 01:01.
+- Sin cambios; sin informe (nada nuevo). Próxima vez: igual, salvo decisión de Àngel sobre la puerta EV.
+
+## 2026-11-01 05:59 — Revisión CFO horaria — Grok
+- Salud: todos los procesos vivos (solana, binance, coinbase, insider, copytrade, dashboard, st_shadow); logs frescos; 0 errores nuevos en solana; sin reinicios.
+- Equity: Solana REAL 48,24 $ (sin posiciones), Coinbase 3,25 $ (SOL-USD abierta, día +0,15 %), Binance paper 998,80 (sin operaciones, régimen bear).
+- Sin operaciones nuevas. Bloqueos: PAWCAT (05:05, 05:25) y SIS (05:35) por EV None (cerebro en sombra, ya informado a las 01:01); SIS vetado a las 05:54 como no vendible (rt 12,7 %), veto correcto.
+- Sin cambios; sin informe (nada nuevo). Próxima vez: igual, salvo decisión de Àngel sobre la puerta EV.
+
+## 2026-11-01 06:30 (Madrid) — mejora continua del modelo (rutina 2 h)
+- Autocrítica:
+  1) Operativo (error principal, sin cambios): 0 compras/cierres REALES desde 31-oct 01:19 (~29 h) y 0 paper nuevos. Cerebro en sombra → `_ev=None` → la puerta viva bloquea todo: PAWCAT (04:49, 05:05, 05:25) y SIS (05:35). SIS se vetó después como no vendible (rt 12,7 %), veto correcto.
+  2) Fuente de datos débil: Solana Tracker devuelve "neutral" en el 89 % de los chequeos de hoy (3361 neutral / 404 pass / 32 reject), probablemente por el tope de presupuesto o datos que faltan. El filtro aporta poco ahora mismo. No se toca (solo endurece; el presupuesto no se sube).
+  3) Dataset honesto: 492 filas (+50), 109 mints, media −9,6 %/op, PF 0,16. Universo coherente con los vetos vivos: 401 filas, 83 mints, media −3,35 %, PF 0,32.
+- Mejora probada (dirigida al error 1, la que quedó pendiente a las 04:30): reetiquetar con salida rápida, cobrando el primer +2/+3/+5 % neto (tras coste de ida y vuelta) antes de la salida original. K∈{5,10}, DAMP 0,3, universo filtrado, cortes temporales con purga 50/60/70/80 %.
+- Resultado: la salida rápida mejora un poco el universo entero (media −3,35 % → −2,8 %; PF 0,32 → 0,35 con +5 %), pero sigue negativa. OOS: modelo actual 0 operaciones en todos los cortes; candidatos también 0 (EV máx. en test −2,7 % a −0,19 %, nunca sobre la puerta). Sin muestras para comparar.
+- Decisión: NO se promueve. Se mantiene el modelo actual (sombra). Sin cambios en código, config, tamaño, stops ni vetos; sin reinicio (no había ventas en curso; 0 posiciones); sin backup (nada reemplazado). Script: research/brain_cycle_0630.py.
+- Próxima vez: el universo actual no tiene ventaja con ningún etiquetado probado; probar features de flujo (compras/ventas, smart-wallet entrante) del registro st_shadow cuando tenga retornos a futuro suficientes.
+
+## 2026-11-01 07:03 — Revisión CFO horaria — Grok
+- Salud: todos los procesos vivos (solana, binance, coinbase, insider, copytrade, dashboard, st_shadow); logs frescos; 0 errores hoy en los tres bots; sin reinicios.
+- Equity: Solana REAL 48,36 $ (sin posiciones), Coinbase 3,26 $ (SOL-USD abierta, día +0,43 %), Binance paper 998,80 (sin operaciones, régimen bear).
+- Sin operaciones nuevas. Bloqueos de la última hora: BLOB (wash_organic0, repetido) y PAWCAT (wash_traders 375/8470) por el filtro anti-scam; vetos correctos. Solana Tracker sigue devolviendo casi todo "neutral".
+- Sin cambios; sin informe (nada nuevo). Próxima vez: igual, salvo decisión de Àngel sobre la puerta EV.
+
+## 2026-11-01 07:2x — ALT entry gate (owner OK 07:16) + Solana Tracker budget fix
+- Model in shadow -> EV None blocked every live buy. ALT gate: allowed only if ALL hard vetoes pass (unchanged), ST real verdict (not neutral), score (pre-X) >= 50, real Jupiter round-trip (outAmount) <= 1.5%. Size 4% equity (half of 8%), no $3-5 floor; stops -6%/12% trail, slip/impact caps unchanged. Logged gate=alt. EV present -> EV>=3x rule unchanged.
+- Score 50 chosen: all recent passing candidates scored 45-59 (normal min 45); 60 would never fire.
+- ST neutral 89%: daily cap 400 exhausted by bot calls on every low-score candidate + shadow daemon. Fix: bot calls ST only if score >= min_score-5; daemon capped at 120/day and skips score<35, re-check 2h; cache tokens 1h, deployer 24h. Cap not raised.
+- Backups *.bak_altgate. Tests 67 pass.
+
+## 2026-11-01 07:58 — Revisión CFO horaria — Grok
+- Salud: todos los procesos vivos (solana reiniciado a las 07:2x con la puerta ALT, binance, coinbase, insider, copytrade, dashboard, st_shadow); logs frescos; 0 errores en solana; sin reinicios en esta revisión.
+- Equity: Solana REAL 48,33 $ (sin posiciones), Coinbase 3,25 $ (SOL-USD abierta, día +0,38 %), Binance paper 998,80 (sin operaciones).
+- Sin operaciones nuevas. Puerta ALT activa y funcionando, pero SIS (único candidato que pasa filtros) se salta en cada scan por "Solana Tracker neutral": el presupuesto diario de ST ya está agotado (data/st_budget.json n=400/400 del 01-nov, consumido antes del arreglo de las 07:2x). Resultado: la puerta ALT no puede disparar hasta que el contador se reinicie a medianoche (hora Madrid). SIS además en sombra SMART early_exit (18 vendedores tempranos), así que hoy no se pierde una buena entrada.
+- Sin cambios (subir el tope de ST no se hace sin Àngel). Informado a Àngel. Próxima vez: tras las 00:00 comprobar que ST da veredictos reales y si la puerta ALT dispara.
+
+## 2026-11-01 08:30 (Madrid) — mejora continua del modelo (rutina 2 h)
+- Autocrítica:
+  1) Operativo (error principal): siguen 0 compras/cierres REALES desde 31-oct 01:19 (~31 h). La puerta ALT (07:2x) no puede disparar hoy: SIS pasa filtros pero Solana Tracker da "neutral" porque el presupuesto diario (400) se agotó antes del arreglo; además SMART en sombra marca SIS early_exit (7 vendedores tempranos a las 08:24), así que no se pierde una buena entrada.
+  2) Fuente de datos: Solana Tracker solo cubre 122 de 521 filas del dataset (23 %), y casi todo reciente; el filtro aún no tiene historia suficiente para aprender de él.
+  3) Dataset honesto: 521 filas (+29), 109 mints, media −9,3 %/op, PF 0,16. Universo coherente con vetos: 430 filas, 83 mints, media −3,45 %, PF 0,30 (algo peor que 06:30).
+  4) Aviso crítico sobre la puerta ALT: en las filas con datos ST, incluso "pass" de ST tiene media −3,97 % y PF 0,28 (n=24, 10 mints); top10 <25 % similar (−3,99 %, PF 0,26). Mejor que el resto (−5 %, PF 0,11) pero sigue negativo. No hay filas históricas que cumplan a la vez score ≥50 y coste ≤1,5 %, así que la puerta ALT opera sin respaldo histórico; vigilar sus primeros cierres de cerca.
+- Mejora probada (la pendiente de 06:30): features de flujo del registro st_shadow (compras dominantes, snipers/bundlers bajos, top10 bajo, veredicto pass, score ST alto), unidas por mint al registro ST más cercano (≤2 h antes). K∈{5,10}, DAMP 0,3, cortes temporales con purga 50/60/70/80 %.
+- Resultado OOS: modelo actual 0 operaciones en todos los cortes; candidato también 0 (EV máx. en test −2,99 % a +0,12 %, nunca sobre la puerta). Sin muestras para comparar.
+- Decisión: NO se promueve. Se mantiene el modelo actual (sombra). Sin cambios en código, config, tamaño, stops ni vetos; sin reinicio (0 posiciones, sin ventas en curso); sin backup (nada reemplazado). Script: research/brain_cycle_0830.py.
+- Próxima vez: repetir flujo ST cuando haya más cobertura (la cola de st_shadow crece ~120/día); revisar los primeros cierres de la puerta ALT en cuanto los haya.
+
+## 2026-11-01 08:58 — Revisión CFO horaria — Grok
+- Salud: todos los procesos vivos (solana, binance, coinbase, insider, copytrade, dashboard, st_shadow); logs frescos; 0 errores; sin reinicios.
+- Equity: Solana REAL 48,26 $ (sin posiciones), Coinbase 3,25 $ (SOL-USD abierta, día +0,22 %), Binance paper 998,80 (sin operaciones).
+- Sin operaciones nuevas. ALT gate sigue saltando SIS por ST neutral (presupuesto 400/400 agotado, se reinicia a medianoche); SIS además SMART early_exit. DESSA bloqueado (creador en lista negra), correcto.
+- Sin cambios; sin informe (ya informado a las 07:58). Próxima vez: tras 00:00 comprobar veredictos ST reales y disparo de la puerta ALT.
+
+## 2026-11-01 10:03 — Revisión CFO horaria — Grok
+- Salud: todos los procesos vivos (solana, binance, coinbase, insider, copytrade, dashboard, st_shadow); logs frescos; 0 errores hoy; sin reinicios.
+- Equity: Solana REAL 48,42 $ (sin posiciones), Coinbase 3,26 $ (SOL-USD abierta, día +0,57 %), Binance paper 998,80 (sin operaciones, régimen range).
+- Sin operaciones nuevas. SIS y PAWCAT siguen con ST neutral (presupuesto agotado hasta medianoche); PAWCAT bloqueado por wash_traders (correcto). 0 candidatos pasan todos los filtros en los scans de la última hora.
+- Sin cambios; sin informe (nada nuevo). Próxima vez: tras 00:00 comprobar veredictos ST reales y disparo de la puerta ALT.
+
+## 2026-11-01 10:30 (Madrid) — mejora continua del modelo (rutina 2 h)
+- Autocrítica:
+  1) Operativo (error principal, sin cambios): 0 compras/cierres REALES desde 31-oct 01:19 (~33 h) y 0 paper nuevos. La puerta ALT no puede disparar: Solana Tracker sigue en 400/400 (agotado hasta medianoche) y los 116 chequeos ST de 08:00–10:30 dieron "neutral". 0 candidatos pasan todos los filtros en los últimos scans.
+  2) Dataset honesto: 533 filas (+12), 110 mints, media −9,07 %/op, PF 0,16. Universo coherente con vetos: 442 filas, 84 mints, media −3,33 %, PF 0,32.
+  3) Hallazgo: coste de ida y vuelta bajo (≤1,5 %) es el mejor subgrupo (n=111, 37 mints, −2,15 %, PF 0,46) y score ≥50 aún mejor (n=14, 8 mints, −1,16 %, PF 0,74), pero ambos negativos y no hay ninguna fila histórica con las dos cosas a la vez (justo la condición de la puerta ALT): la ALT sigue sin respaldo histórico.
+- Mejora probada: features de coste (rt ≤1,5 %, 1,5–2,5 %) y score ≥50 + hiperparámetros con menos encogimiento (K∈{3,5,10}, DAMP∈{0,1, 0,3}); cortes temporales con purga 50/60/70/80 %.
+- Resultado OOS: modelo actual 0 operaciones en todos los cortes; candidatos también 0 (EV máx. en test −3,3 % a +2,0 %, nunca sobre la puerta ≥ max(1 %, 3×coste)). Sin muestras para comparar.
+- Decisión: NO se promueve. Se mantiene el modelo actual (sombra). Sin cambios en código, config, tamaño, stops ni vetos; sin reinicio (0 posiciones, sin ventas en curso); sin backup (nada reemplazado). Script: research/brain_cycle_1030.py.
+- Próxima vez: tras el reinicio del presupuesto ST (00:00) revisar veredictos reales y primeros cierres ALT; repetir flujo ST con más cobertura.
+
+## 2026-11-01 11:02 — Revisión CFO horaria — Grok
+- Salud: todos los procesos vivos (solana, binance, coinbase, insider, copytrade, dashboard, st_shadow); logs frescos; 0 errores hoy; sin reinicios.
+- Equity: Solana REAL 48,27 $ (sin posiciones), Coinbase 3,25 $ (SOL-USD abierta, día +0,11 %), Binance paper 998,80 (sin operaciones, régimen range).
+- Sin operaciones nuevas. Presupuesto Solana Tracker sigue 400/400 (agotado hasta medianoche), la puerta ALT no puede disparar.
+- Sin cambios; sin informe (nada nuevo). Próxima vez: tras 00:00 comprobar veredictos ST reales y disparo de la puerta ALT.
+
+## 2026-11-01 11:56 — Revisión CFO horaria — Grok
+- Salud: procesos vivos (solana, binance, coinbase + servicios auxiliares); logs frescos; 0 errores hoy; sin reinicios.
+- Equity: Solana REAL 48,18 $ (sin posiciones), Coinbase 3,24 $ (SOL-USD abierta, día +0,06 %), Binance paper 998,80 (sin operaciones, régimen range).
+- Sin operaciones nuevas; 0 candidatos pasan todos los filtros en los scans recientes. Presupuesto Solana Tracker 400/400 (agotado hasta medianoche), la puerta ALT no puede disparar.
+- Sin cambios; sin informe (nada nuevo). Próxima vez: tras 00:00 comprobar veredictos ST reales y disparo de la puerta ALT.
+
+- 2026-11-01 12:11: Àngel ordered alt_gate_min_score 50 -> 45 (hot reload, backup config.json.bak_alt45). Still requires real ST verdict, all vetoes, rt cost <=1.5%, size 4%.
+
+## 2026-11-01 12:30 (Madrid) — mejora continua del modelo (rutina 2 h)
+- Autocrítica:
+  1) Operativo (error principal, sin cambios): 0 compras/cierres REALES desde 31-oct 01:19 (~35 h) y 0 paper nuevos. Solana Tracker sigue 400/400 (agotado hasta medianoche), así que la puerta ALT (ahora score ≥45 desde 12:11) no puede disparar. Últimos scans: 0 candidatos pasan todos los filtros.
+  2) Dataset honesto: 541 filas (+8), 111 mints, media −9,08 %/op, PF 0,15. Universo coherente con vetos: 450 filas, 85 mints, media −3,45 %, PF 0,30.
+  3) Aviso sobre el cambio a score ≥45: score ≥45 histórico n=41 (13 mints) media −4,30 %, PF 0,21 (peor que ≥50: −1,16 %, PF 0,74). Score ≥45 + coste ≤1,5 % (condición ALT): solo n=2, −4,28 %, PF 0. Bajar a 45 añade entradas históricamente peores; vigilar los primeros cierres ALT.
+- Mejora probada: momento de salida — reetiquetar con tenencia máxima corta (cierre de la primera vela ≥15/30/60 min tras la entrada, si es antes de la salida original), K∈{5,10}, DAMP 0,3, cortes temporales con purga 50/60/70/80 %.
+  - En el universo completo las salidas cortas pierden menos (15 min: −2,65 %, PF 0,24; 30 min: −2,92 %; 60 min: −3,18 %) frente a −3,45 % actual, pero siguen negativas.
+- Resultado OOS: modelo actual 0 operaciones en todos los cortes; candidatos también 0 (EV máx. en test −0,22 % a −2,64 %, nunca sobre la puerta). Sin muestras para comparar.
+- Decisión: NO se promueve. Se mantiene el modelo actual (sombra). Sin cambios en código, config, tamaño, stops ni vetos; sin reinicio (0 posiciones, sin ventas en curso); sin backup. Script: research/brain_cycle_1230.py.
+- Próxima vez: tras 00:00 revisar veredictos ST reales y primeros cierres ALT; repetir flujo ST con más cobertura; si la ALT llega a operar, evaluar salida por tiempo ~15 min como regla de salida candidata.
+
 ## 2026-11-01 17:30 (Madrid) — Panel v2, Director con autoridad acotada, cerebro v2 y rent de las ATAs (Claude, sesión autónoma; Àngel: "haz un dashboard en vivo profesional con todo real" y "mejora el cerebro y las decisiones, que tenga autoridad propia para ganar dinero")
 - **Diagnóstico con los 64 cierres reales del 30-oct:** tamaño medio 2,94 $; win 33 %, +1,72 % / −3,51 % → esperanza −1,8 % por operación; PnL −1,65 $ pero el patrimonio cayó −4,73 $: los ~3 $ restantes son el rent de 24 cuentas de token (0,00204 SOL cada una) más comisiones. Con posiciones de 3 $ el coste fijo es ~6 % por operación, mayor que cualquier ventaja medida (cerebro OOS +1,8 %). Primero se elimina ese lastre; después se da autoridad al cerebro para operar poco y bien.
 - **Rent de ATAs:** `live_sol.close_empty_atas` (solo saldo 0; simula antes de enviar; ≤12 por tx; lote fallido → una a una) + `tools/close_atas.py` (dry run por defecto) + `memebot.ata_sweep` tras cada venta completa en real (3 intentos, registro en research/ata_close.jsonl). Pendiente de Àngel: ejecutar `--yes` para recuperar ~4,7 $.
@@ -664,4 +942,3 @@ Backups: memebot.py / copytrade_paper.py / config.json / DECISIONS.md .bak_rugpu
 - Comprobación previa en Keel (misma regla, cesta manual de 31 perps del ecosistema Solana, top-5 causal semanal por volumen): ventana completa Sharpe −0,03 / −36 % / DD −72 %; fuera de muestra Sharpe −0,86 / −29 % / PF 0,63. **La ventaja de la regla está en los grandes (BTC/ETH/SOL…), no en los tokens de Solana.** Conclusión honesta: no es la mejora que buscábamos; se deja en papel como evidencia hacia delante y no se le dedica más capital ni más trabajo salvo que la evidencia en papel diga lo contrario.
 - Lo que sí sostiene la evidencia: pata Hyperliquid causal (OOS 1,15) en paper en Keel; memebot con costes fijos eliminados (rent recuperado: 28 cuentas, 0,042 SOL) y Director; agente insider en tiempo real.
 - Tests: 123.
-

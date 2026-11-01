@@ -50,8 +50,8 @@ Repetir el comando del paso 2 más adelante actualiza el bot a la última versi�
 |---|---|---|
 | 8-45 s | escanea, veta (RugCheck/GoPlus/Jupiter), decide con el cerebro y el Director, compra/vende, cierra la cuenta de token tras vender | `bot_solana.log`, panel |
 | 1 h | reentrena el cerebro (walk-forward purgado), recalcula el Director (jugadas, umbrales, tamaño, horas, salida, tope diario) | `brain_state.json`, `director_state.json`, panel |
-| 1 h | **operador**: revisión de salud, equity, escaneo, errores; acciones seguras; entrada en `DECISIONS.md`; alertas | tarjeta "Operador automático" del panel, `alerts.jsonl` |
-| 1 día (08:00) | informe diario con lo que queda por decidir | `DECISIONS.md` |
+| 1 h | **operador**: revisión de salud, equity, escaneo, errores; acciones seguras; entrada en `DIARIO.md`; alertas | tarjeta "Operador automático" del panel, `alerts.jsonl` |
+| 1 día (08:00) | informe diario con lo que queda por decidir | `DIARIO.md` |
 | 1 h | contexto Coinversa de Hyperliquid (si hay `COINVERSA_API_KEY`) | `data/hl_risk.json`, panel |
 | diario | **tendencia sobre tokens líquidos** (`trend_spot.py`, papel): la regla validada en Keel (SuperTrend + Bollinger + ATR) sobre los tokens de Solana con más volumen; evalúa tras el cierre UTC, marca cada 15 min; el Director la apaga si pierde; a real solo con `trend_live: true` tras 20 cierres con PF > 1,3 | tarjeta "Tendencia", `trades_solana_trend_paper.csv` |
 | continuo | **agente insider**: `insider.py` mina y puntúa wallets (elite/good), `insider_ws.py` las escucha por WebSocket (segundos en vez de 70-130 s), convergencia de compras → alerta → entrada solo si pasa todos los vetos; validación forward de cada alerta | tarjeta Insiders del panel (`tiempo real: ● socket`), `insider_status.json` |
@@ -95,4 +95,4 @@ Lo que **nunca** hace nada automático: relajar vetos, tamaños o stops; cambiar
 | Escaneos lentos / RugCheck caído | tarjeta Escaneo | el presupuesto de 150 s y el fallback GoPlus ya limitan el daño; nada que hacer salvo esperar |
 | El Director apaga la jugada `scanner` | `director_log.jsonl`, `--report` | es la evidencia (PF < 1 con n ≥ 15): el bot no compra; decide si pasar a papel |
 
-Historial y razones de todo: `DECISIONS.md` (lo escribe el operador cada hora), `director_log.jsonl`, `operator_log.jsonl`.
+Historial y razones de todo: `DIARIO.md` (lo escribe el operador cada hora, solo en tu máquina), `DECISIONS.md` (decisiones de diseño, en el repo), `director_log.jsonl`, `operator_log.jsonl`.

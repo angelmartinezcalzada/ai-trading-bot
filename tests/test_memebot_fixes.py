@@ -228,10 +228,10 @@ def test_ata_sweep_queues_only_fully_sold_live_mints_and_retries_failures(monkey
 
 
 def test_live_buy_impact_cap_is_configurable(monkeypatch):
-    """owner 01-nov: max_buy_impact_pct 5.5 (default stays 1.0)"""
-    ls = fake_live_sol(monkeypatch, quote=lambda inp, out, lam, slip: {"outAmount": "1000000", "otherAmountThreshold": "990000", "priceImpactPct": "0.03"})
+    """owner 01-nov: max_buy_impact_pct (code default 5.0 after the merge with Grok's version; config 5.5)"""
+    ls = fake_live_sol(monkeypatch, quote=lambda inp, out, lam, slip: {"outAmount": "1000000", "otherAmountThreshold": "990000", "priceImpactPct": "0.06"})
     p = {"baseToken": {"symbol": "X"}, "liquidity": {"usd": 100000}, "_ev": 5.0, "_dec": 6}
     s = NS(sol=100.0, c={"max_roundtrip_loss_pct": 3}, pos={}, seen={}, live=True)
-    memebot.Meme._buy_live(s, "MINT", p, 50, "why", 4.0); assert ls.calls["swap"] == 0          # 3 % impact > default 1 %
-    s = NS(sol=100.0, c={"max_roundtrip_loss_pct": 3, "max_buy_impact_pct": 5.5}, pos={}, seen={}, live=True)
-    memebot.Meme._buy_live(s, "MINT", p, 50, "why", 4.0); assert ls.calls["swap"] == 1          # allowed up to 5.5 %
+    memebot.Meme._buy_live(s, "MINT", p, 50, "why", 4.0); assert ls.calls["swap"] == 0          # 6 % impact > default 5 %
+    s = NS(sol=100.0, c={"max_roundtrip_loss_pct": 3, "max_buy_impact_pct": 7.0}, pos={}, seen={}, live=True)
+    memebot.Meme._buy_live(s, "MINT", p, 50, "why", 4.0); assert ls.calls["swap"] == 1          # allowed up to the configured cap

@@ -229,6 +229,7 @@ button{background:#3b6cff;border:0;font-weight:600;cursor:pointer}.e{color:#ff6b
 def _page(): return open(os.path.join(D, "dashboard.html")).read()
 
 import live_view; live_view.register(app)
+import panel_v2; panel_v2.register(app)   # Grok's mobile panel (1-nov) at /movil + /api/live2
 
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=8787, threaded=True)

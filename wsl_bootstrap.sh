@@ -8,7 +8,12 @@ REPO="${REPO:-https://github.com/angelmartinezcalzada/ai-trading-bot.git}"; DIR=
 if ! command -v git >/dev/null || ! command -v python3 >/dev/null || ! python3 -m pip --version >/dev/null 2>&1; then
   echo "== instalando git y python (pide tu contraseña de Ubuntu)"; sudo apt-get update -qq; sudo apt-get install -y -qq git python3 python3-pip curl >/dev/null
 fi
-if [ -d "$DIR/.git" ]; then echo "== actualizando $DIR"; git -C "$DIR" pull -q; else echo "== clonando en $DIR"; git clone -q "$REPO" "$DIR"; fi
+if [ -d "$DIR/.git" ]; then
+  echo "== actualizando $DIR (tus ajustes de config.json se conservan)"
+  cd "$DIR"; [ -f config.json ] && cp config.json config.local.json
+  git checkout -q -- config.json 2>/dev/null || true; git pull -q
+  [ -f config.local.json ] && python3 tools/config_merge.py config.local.json config.json && rm -f config.local.json
+else echo "== clonando en $DIR"; git clone -q "$REPO" "$DIR"; fi
 cd "$DIR"; chmod +x *.sh tools/*.py 2>/dev/null || true
 ./install.sh
 if pgrep -f "python3 bot.p[y] --exchange" >/dev/null; then echo "== el bot ya estaba corriendo; lo reinicio"; ./stop.sh; sleep 3; fi

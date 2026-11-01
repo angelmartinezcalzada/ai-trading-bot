@@ -19,6 +19,8 @@ done
 ( while [ ! -f STOP ]; do python3 -c "import websockets" 2>/dev/null || { sleep 3600; continue; }; echo "$(date -Is) [insider_ws] start" >> supervisor.log; python3 insider_ws.py >> stdout_insider_ws.log 2>&1; sleep 10; done ) &
 # Tendencia sobre tokens líquidos (trend_spot.py): papel; evalúa una vez al día y marca cada 15 min
 ( while [ ! -f STOP ]; do echo "$(date -Is) [trend] start" >> supervisor.log; python3 trend_spot.py --loop >> stdout_trend.log 2>&1; sleep 30; done ) &
+# Solana Tracker en sombra (st_shadow_daemon.py, de Grok 1-nov): solo si keys.env tiene SOLANATRACKER_API_KEY
+( while [ ! -f STOP ]; do if [ -f keys.env ] && grep -q '^SOLANATRACKER_API_KEY=.' keys.env; then pgrep -f "python3 st_shadow_daemo[n].py" >/dev/null && { sleep 60; continue; }; echo "2026-11-01T20:54:20+00:00 [st_shadow] start" >> supervisor.log; SOLANATRACKER_API_KEY="" python3 st_shadow_daemon.py >> stdout_st_shadow.log 2>&1; fi; sleep 60; done ) &
 # Operador automático (operador.py): revisión horaria, acciones seguras (rent de ATAs, procesos colgados, Director, logs), DECISIONS.md, alertas
 ( sleep 120; while [ ! -f STOP ]; do echo "$(date -Is) [operator] review" >> supervisor.log
     ( [ -f keys.env ] && grep -q '^ALERT_CMD=.' keys.env && export ALERT_CMD="$(grep '^ALERT_CMD=' keys.env | head -1 | cut -d= -f2- | sed "s/^'//;s/'$//")"; python3 operador.py --once >> stdout_operator.log 2>&1 )

@@ -170,7 +170,9 @@
       "alt_gate": true,
       "alt_gate_size_pct": 4,
       "alt_gate_max_rt_cost_pct": 1.5,
-      "max_entry_h1_pct": 50
+      "max_entry_h1_pct": 50,
+      "alt_gate_min_score": 45,
+      "st_live": true
     }
   },
   "swing": {
