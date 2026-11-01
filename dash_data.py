@@ -17,7 +17,7 @@ import os, re, csv, json, time, math, socket, subprocess, collections, datetime 
 
 TAIL_CAP = 300_000     # bytes per tail read (contract: 300 KB)
 FRESH = {"status": 120, "equity": 300, "insider": 900, "copytrade": 900, "brain": 3 * 3600, "hl_risk": 2 * 3600,
-         "candidates": 900, "log": 900, "supervisor": 3600, "eval": 2 * 3600, "director": 3 * 3600, "operator": 2 * 3600}
+         "candidates": 900, "log": 900, "supervisor": 3600, "eval": 2 * 3600, "director": 3 * 3600, "operator": 2 * 3600, "trend": 1800}
 CEX = ("binance", "coinbase")
 TX_RE = re.compile(r" tx=\S+")
 # Activity classifier (kind, regex): the first match wins. dashboard.py imports this table from here (importing
@@ -624,6 +624,21 @@ def _operator(root, now):
     return h
 
 
+def _trend(root, now):
+    """state/trend_status.json (trend_spot.py: paper trend play on liquid Solana tokens)"""
+    src = "state/trend_status.json"; st, mt = _load_json(_p(root, "state", "trend_status.json"))
+    if not isinstance(st, dict): raise ValueError("trend_status.json no es un objeto")
+    h = _hdr(src, _f(st.get("ts")) or mt, now, FRESH["trend"])
+    sig = st.get("signals") if isinstance(st.get("signals"), dict) else {}
+    h.update(mode=_s(st.get("mode"), 8), budget_usd=_f(st.get("budget_usd")), equity=_f(st.get("equity")), cash=_f(st.get("cash")), closed=_i(st.get("closed"), None), pnl=_f(st.get("pnl")),
+             last_eval_day=_s(st.get("last_eval_day"), 12), rule=_s(st.get("rule"), 120),
+             positions=[{"sym": _s(q.get("sym"), 24), "mint_short": _short(q.get("mint")), "entry": _f(q.get("entry")), "mark": _f(q.get("mark")), "usd": _f(q.get("usd")), "pnl": _f(q.get("pnl")), "age_h": _f(q.get("age_h"))}
+                        for q in (st.get("positions") or []) if isinstance(q, dict)],
+             signals=sorted([{"sym": _s(v.get("sym"), 24), "mint_short": _short(m), "entry": bool(v.get("entry")), "st_green": bool(v.get("st_green")), "bb_pos": _f(v.get("bb_pos")), "atr_ratio": _f(v.get("atr_ratio")), "in_universe": bool(v.get("in_universe", True))}
+                             for m, v in sig.items() if isinstance(v, dict)], key=lambda x: (not x["entry"], x["sym"]))[:12])
+    return h
+
+
 # ---------------------------------------------------------------- entry point
 def build_overview(root, now=None):
     """Everything the v2 panel shows, from files under `root` only. Never raises; see the module docstring."""
@@ -640,7 +655,8 @@ def build_overview(root, now=None):
            "cex": _safe(lambda: _cex(root, now, ex_cfg), "status_binance.json, status_coinbase.json", FRESH["status"]),
            "activity": _safe(lambda: _activity(root, now, ex_cfg), "bot_<ex>.log", FRESH["log"]),
            "director": _safe(lambda: _director(root, now), "director_state.json", FRESH["director"]),
-           "operator": _safe(lambda: _operator(root, now), "operator_state.json", FRESH["operator"])}
+           "operator": _safe(lambda: _operator(root, now), "operator_state.json", FRESH["operator"]),
+           "trend": _safe(lambda: _trend(root, now), "state/trend_status.json", FRESH["trend"])}
     out["meta"].setdefault("now", now)
     return _sanitize(out)
 

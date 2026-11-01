@@ -53,6 +53,7 @@ Repetir el comando del paso 2 más adelante actualiza el bot a la última versi�
 | 1 h | **operador**: revisión de salud, equity, escaneo, errores; acciones seguras; entrada en `DECISIONS.md`; alertas | tarjeta "Operador automático" del panel, `alerts.jsonl` |
 | 1 día (08:00) | informe diario con lo que queda por decidir | `DECISIONS.md` |
 | 1 h | contexto Coinversa de Hyperliquid (si hay `COINVERSA_API_KEY`) | `data/hl_risk.json`, panel |
+| diario | **tendencia sobre tokens líquidos** (`trend_spot.py`, papel): la regla validada en Keel (SuperTrend + Bollinger + ATR) sobre los tokens de Solana con más volumen; evalúa tras el cierre UTC, marca cada 15 min; el Director la apaga si pierde; a real solo con `trend_live: true` tras 20 cierres con PF > 1,3 | tarjeta "Tendencia", `trades_solana_trend_paper.csv` |
 | continuo | **agente insider**: `insider.py` mina y puntúa wallets (elite/good), `insider_ws.py` las escucha por WebSocket (segundos en vez de 70-130 s), convergencia de compras → alerta → entrada solo si pasa todos los vetos; validación forward de cada alerta | tarjeta Insiders del panel (`tiempo real: ● socket`), `insider_status.json` |
 
 Acciones que el operador toma solo (todas reversibles): cerrar cuentas de token vacías (rent de vuelta al wallet, máx. cada 6 h),

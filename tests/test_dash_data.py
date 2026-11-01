@@ -297,3 +297,8 @@ def test_api_overview_through_flask(tmp_path, monkeypatch):
     assert c.post("/api/action", json={"action": "pause", "ex": "solana"}).status_code == 403     # CSRF still enforced
     r = c.post("/api/action", json={"action": "pause", "ex": "solana"}, headers={"X-CSRF": csrf}); assert r.status_code == 200 and r.get_json()["ok"]
     assert mod.ACT is dash_data.ACT
+
+
+def test_trend_section(ov, fx):
+    t = ov["trend"]; assert t["available"] and t["pnl"] == 12.0 and len(t["positions"]) == 1 and t["positions"][0]["sym"] == "FIXJ"
+    assert t["signals"][0]["entry"] is True and t["signals"][0]["sym"] == "FIXJ" and t["last_eval_day"] == "2026-10-31"

@@ -31,7 +31,7 @@ def test_apply_never_loosens_any_risk_key():
             elif mode == "min": assert c2[k] <= cfg[k], (k, cfg[k], c2[k])
             else: assert (not c2[k]) or cfg[k], (k, cfg[k], c2[k])
         assert c2["pump_play"] is False                                    # the director never puts the pump play live
-        assert set(c2["director_windows"]) <= set(range(24)) and set(c2["director_plays"]) == {"scanner", "insider_elite", "pump"}
+        assert set(c2["director_windows"]) <= set(range(24)) and set(c2["director_plays"]) >= {"scanner", "insider_elite", "pump"}
         for k, old, new in changes: assert k in D.TIGHTER
 
 
@@ -64,7 +64,7 @@ def test_play_stats_shrinks_small_samples_toward_nothing():
 def test_plays_decision_switches_on_evidence_and_never_puts_pump_live():
     ev = {"scanner": {"n_eff": 25, "pf": 0.6, "exp_pct": -2.0}, "insider_elite": {"n_eff": 25, "pf": 1.6, "exp_pct": 3.0}, "pump": {"n_eff": 60, "pf": 0.4, "exp_pct": -1.8}}
     pl, why = D.plays_decision(ev, {"scanner": "on", "insider_elite": "off"}, 1.0, dict(BASE, pump_play=True))
-    assert pl == {"scanner": "off", "insider_elite": "on", "pump": "off"} and "PF" in why["scanner"]
+    assert {k: pl[k] for k in ("scanner", "insider_elite", "pump")} == {"scanner": "off", "insider_elite": "on", "pump": "off"} and "PF" in why["scanner"] and pl["trend"] == "paper"
     pl, _ = D.plays_decision({"scanner": {"n_eff": 5, "pf": 0.2, "exp_pct": -9}}, {"scanner": "on"}, 1.0, BASE)
     assert pl["scanner"] == "on" and pl["pump"] == "paper"                 # too little evidence: unchanged; pump stays in paper
     pl, _ = D.plays_decision({"scanner": {"n_eff": 25, "pf": 1.5, "exp_pct": 0.9}}, {"scanner": "on"}, 1.0, BASE)

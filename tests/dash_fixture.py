@@ -217,4 +217,10 @@ def make_fixture(d, now):
                "last_daily": "2026-10-31", "last_ata": now - 7200, "last_restart": {}}, open(os.path.join(d, "operator_state.json"), "w", encoding="utf-8"))
     open(os.path.join(d, "alerts.jsonl"), "w", encoding="utf-8").write(json.dumps({"t": now - 1200, "level": "warn", "code": "errors_1h", "msg": "1 error en logs"}) + "\n")
     exp["operator"] = {"worst": "warn", "n_findings": 2}
+    os.makedirs(os.path.join(d, "state"), exist_ok=True)
+    json.dump({"ts": now - 300, "mode": "paper", "budget_usd": 1000.0, "equity": 1012.0, "cash": 340.0, "closed": 3, "pnl": 12.0, "last_eval_day": "2026-10-31",
+               "positions": [{"sym": "FIXJ", "mint": "Fixture" + "j" * 36, "entry": 1.0, "mark": 1.05, "usd": 330.0, "pnl": 16.5, "age_h": 30.0}],
+               "signals": {"Fixture" + "j" * 36: {"sym": "FIXJ", "entry": True, "st_green": True, "bb_pos": 0.7, "atr_ratio": 1.1, "in_universe": True}, "Fixture" + "k" * 36: {"sym": "FIXK", "entry": False, "st_green": False, "bb_pos": 0.3, "atr_ratio": 0.9, "in_universe": True}},
+               "rule": "fixture rule"}, open(os.path.join(d, "state", "trend_status.json"), "w", encoding="utf-8"))
+    exp["trend"] = {"pnl": 12.0, "n_pos": 1}
     return exp

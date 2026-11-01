@@ -20,7 +20,7 @@ import os, sys, json, time, math, csv, collections, datetime as dt, logging
 log = logging.getLogger("director")
 STATE_FILE, LOG_FILE = "director_state.json", "director_log.jsonl"
 MAX_AGE_S, SHADOW_S = 3 * 3600, 24 * 3600
-PLAYS = ("scanner", "insider_elite", "pump")
+PLAYS = ("scanner", "insider_elite", "pump", "trend")
 EV_MIN_BASE = 0.01            # brain.EV_MIN (the deployed policy's floor); the director can only raise it
 FIXED_SHARE_TARGET = 0.005    # size the fixed cost down to <= 0.5 % of the position
 FIXED_SHARE_MAX = 0.02        # above 2 % of the position in fixed cost the director refuses to trade (target_usd = 0)
@@ -53,8 +53,9 @@ def _iso(s):
     except Exception: return None
 
 
-def ledger_rows(path, now, days):
-    """SELL rows of a trades CSV (memebot format) in the last `days`, each tagged with the play of its BUY (matched by symbol)."""
+def ledger_rows(path, now, days, play=None, size_col=None):
+    """SELL rows of a trades CSV in the last `days`, each tagged with the play of its BUY (matched by symbol), or with `play` for a
+    single-play ledger (trend: columns time,symbol,side,price,usd,pnl,reason,mint -> size from `size_col`)."""
     if not os.path.exists(path): return []
     out, play_of = [], {}
     try: rows = list(csv.DictReader(open(path, encoding="utf-8", errors="replace")))
@@ -67,9 +68,11 @@ def ledger_rows(path, now, days):
         if side != "SELL" or now - t > days * 86400: continue
         try: pnl, px, qty = float(r.get("pnl") or 0), float(r.get("price") or 0), float(r.get("qty") or 0)
         except ValueError: continue
-        size = px * qty
-        play = "pump" if classify_play(reason) == "pump" else play_of.get(sym, classify_play(reason))
-        out.append({"t": t, "sym": sym, "pnl": pnl, "pct": (pnl / size) if size > 0 else 0.0, "play": play, "hour": dt.datetime.fromtimestamp(t).hour})
+        try: size = float(r.get(size_col) or 0) if size_col else px * qty
+        except ValueError: size = 0.0
+        if size_col and size > 0: size = size - pnl if size > pnl else size     # the trend ledger logs the proceeds: cost basis = proceeds - pnl
+        pl = play or ("pump" if classify_play(reason) == "pump" else play_of.get(sym, classify_play(reason)))   # never rebind `play`: it is the per-ledger override
+        out.append({"t": t, "sym": sym, "pnl": pnl, "pct": (pnl / size) if size > 0 else 0.0, "play": pl, "hour": dt.datetime.fromtimestamp(t).hour})
     return out
 
 
@@ -89,6 +92,8 @@ def plays_evidence(root, now, cfg, days=14):
     """per play: real stats (weight 1) + paper stats (weight 0.5) + combined; the decision uses the combined n_eff."""
     real = ledger_rows(os.path.join(root, "trades_solana_live.csv"), now, days)
     paper = ledger_rows(os.path.join(root, "trades_solana_paper.csv"), now, days)
+    paper += ledger_rows(os.path.join(root, "trades_solana_trend_paper.csv"), now, days, play="trend", size_col="usd")
+    real += ledger_rows(os.path.join(root, "trades_solana_trend_live.csv"), now, days, play="trend", size_col="usd")
     ev = {}
     for p in PLAYS:
         R = [r for r in real if r["play"] == p]; P = [r for r in paper if r["play"] == p]
@@ -151,6 +156,10 @@ def plays_decision(ev, prev, cost_pct, cfg):
         if n >= MIN_N_OFF and pf is not None and (pf < 1.0 or (ex is not None and ex <= cost_pct)): out[p] = "off"; why[p] = f"n_eff={n} PF={pf} exp={ex}% <= coste {cost_pct}%"
         elif n >= MIN_N_ON and pf is not None and pf > 1.2 and ex is not None and ex > cost_pct: out[p] = "on"; why[p] = f"n_eff={n} PF={pf} exp={ex}% > coste {cost_pct}%"
         else: out[p] = cur; why[p] = f"sin evidencia suficiente (n_eff={n}); se mantiene {cur}"
+    out["trend"] = "on" if cfg.get("trend_live", False) else "paper"   # live only by the owner's hand (trend_live); the director may only switch it off
+    e = ev.get("trend") or {}
+    if e.get("n_eff", 0) >= MIN_N_OFF and e.get("pf") is not None and e["pf"] < 1.0: out["trend"] = "off"; why["trend"] = f"n_eff={e['n_eff']} PF={e['pf']}: tendencia apagada"
+    else: why["trend"] = "tendencia en " + out["trend"] + " (pasa a real solo con trend_live=true del dueño tras 20 cierres con PF > 1,3)"
     out["pump"] = "paper" if cfg.get("pump_paper", False) or cfg.get("pump_play", False) else "off"
     e = ev.get("pump") or {}
     if e.get("n_eff", 0) >= MIN_N_OFF and e.get("pf") is not None and e["pf"] < 1.0: out["pump"] = "off"; why["pump"] = f"n_eff={e['n_eff']} PF={e['pf']}: pump apagado también en papel"
@@ -246,7 +255,7 @@ def entry_allowed(c, now_hour, n_trades_today, play="scanner"):
     """memebot gate: play enabled, hour in the window, daily cap not reached. Fail-closed on a malformed state (allowed=True only
     when the director keys are absent, i.e. base config)."""
     pl = c.get("director_plays")
-    if pl is not None and pl.get(play, "on") not in ("on", "paper" if play == "pump" else "on"): return False, f"director: jugada {play} apagada"
+    if pl is not None and pl.get(play, "on") not in (("on", "paper") if play in ("pump", "trend") else ("on",)): return False, f"director: jugada {play} apagada"
     w = c.get("director_windows")
     if w is not None and now_hour not in w: return False, f"director: hora {now_hour} fuera de ventana"
     mx = c.get("director_max_trades_day")

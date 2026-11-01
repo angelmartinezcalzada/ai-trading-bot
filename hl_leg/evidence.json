@@ -249,6 +249,24 @@
     "profit_factor": 1.11
    },
    "why": "same rule on 18 memecoin perps (also a hindsight list). Earlier this was read as 'the memecoin universe is the problem'; against the CAUSAL top-15 in-sample slice (+29%, DD -58%) the gap is small, so the Keel comparison does not prove it. What does say memecoins lose money is the bot's own real record (PF 0.44)."
+  },
+  "solana_basket_causal_top5": {
+   "strategy_id": "str_01m6cdrm095dt4hd1evtdm7ypg",
+   "full": {
+    "id": "btr_01m6cdsd8gwv5tegt661k8wqpb",
+    "sharpe": -0.03,
+    "return_pct": -36.0,
+    "max_dd_pct": -72.4,
+    "profit_factor": 0.97
+   },
+   "out_of_sample": {
+    "id": "btr_01m6cdsgbvs2myvspjw7gt8p8q",
+    "sharpe": -0.86,
+    "return_pct": -29.2,
+    "max_dd_pct": -45.3,
+    "profit_factor": 0.63
+   },
+   "why": "the trend rule on a 31-name Solana-ecosystem pool (causal weekly top-5 by volume) loses: the edge of the rule lives in the majors, not in Solana tokens. The spot trend play in the bot (trend_spot.py) therefore stays paper-only evidence."
   }
  },
  "coinversa_study": {

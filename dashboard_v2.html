@@ -95,6 +95,7 @@ pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:va
   <div class="card"><h2>Copytrade <span class="badge">PAPEL</span> <span id="ct-badge"></span></h2><div id="ct-body"></div></div>
   <div class="card"><h2>Cerebro <span id="br-badge"></span></h2><div id="br-body"></div></div>
  </section>
+ <section id="trend" class="card c12" aria-label="Tendencia"><h2>Tendencia · tokens líquidos de Solana <span class="badge">PAPEL</span> <span id="tr2-badge"></span></h2><div id="tr2-body"></div></section>
  <section id="director" class="card c12" aria-label="Director"><h2>Director <span id="dir-badge"></span><span class="sp"></span><span id="dir-mode" class="small"></span></h2><div id="dir-body"></div></section>
  <section id="hl" class="card c12" aria-label="Hyperliquid"><h2>Hyperliquid (Keel, papel) <span id="hl-badge"></span></h2><div id="hl-body"></div></section>
  <section id="cex" class="c12" aria-label="Exchanges centralizados"><div id="cex-body" class="cexgrid"></div></section>
@@ -209,7 +210,7 @@ const widthOf = id => Math.max(240, $(id).clientWidth || 600);
 /* ---- render: one entry point, one function per section ---- */
 function render(ov) {
   renderTop(ov); renderKpis(ov); renderOperator(ov); renderEquity(ov); renderDaily(ov); renderPositions(ov); renderScan(ov); renderTrades(ov);
-  renderIntel(ov); renderDirector(ov); renderHL(ov); renderCEX(ov); renderActivity(ov); renderControls(ov); renderFooter(ov);
+  renderIntel(ov); renderTrend(ov); renderDirector(ov); renderHL(ov); renderCEX(ov); renderActivity(ov); renderControls(ov); renderFooter(ov);
 }
 function renderTop(ov) {
   const meta = ov.meta || {}, hs = ov.health || {}, H = hs.exchanges || hs, sol = ov.solana;
@@ -320,6 +321,17 @@ function renderIntel(ov) {
    ${oos ? h`<span class="k">OOS</span><span class="small">${Object.entries(oos).slice(0, 8).map(([k, v], i) => h`${i ? ' · ' : ''}${k} ${isNum(v) ? anyNum(v) : typeof v === 'object' ? JSON.stringify(v).slice(0, 60) : String(v)}`)}</span>` : ''}</div>
    <div class="small mute" style="margin-top:8px">decisiones recientes</div>${(br.decisions || []).length ? h`<div class="feed" style="max-height:160px">${br.decisions.slice(0, 8).map(d => h`<div class="row"><span class="t">${hm(d.t ?? d.ts)}</span><span class="m">${typeof d === 'string' ? d : h`<b>${d.sym ?? ''}</b> ${'pass' in d ? (d.pass ? h`<span class="badge good">✔ pasa</span>` : h`<span class="badge warn">✖ veto</span>`) : (d.decision ?? '')} ${isNum(d.score) ? 'score ' + num(d.score, 0) : ''} ${isNum(d.p) ? 'p=' + num(d.p, 2) : ''} ${isNum(d.ev_pct) ? 'EV ' + sgn(d.ev_pct, 1) + ' %' : ''} <span class="mute">${d.fail || d.why || d.reason || ''}${d.narr ? ' · ' + d.narr : ''}</span>`}</span></div>`)}</div>` : h`<div class="empty">ninguna en el estado</div>`}`);
 }
+function renderTrend(ov) {
+  const t = ov.trend; set('tr2-badge', badge(t));
+  if (!ok(t)) { set('tr2-body', h`<div class="empty">sin state/trend_status.json (trend_spot.py evalúa una vez al día tras el cierre UTC y marca cada 15 min)</div>`); return; }
+  const P = t.positions || [], S = t.signals || [];
+  set('tr2-body', h`<div class="cols3">
+   <div><div class="hero ${pol(t.pnl)}">${sgn(t.pnl)} $</div><div class="kv"><span class="k">presupuesto</span><span>${usd(t.budget_usd, 0)} (papel) · patrimonio ${usd(t.equity)} · efectivo ${usd(t.cash)}</span>
+    <span class="k">cerradas</span><span>${t.closed ?? 0}</span><span class="k">última evaluación</span><span>${t.last_eval_day || '—'} <span class="mute small">(diaria, tras el cierre UTC)</span></span></div>
+    <div class="small mute" style="margin-top:6px">${t.rule || ''}</div></div>
+   <div><div class="small mute" style="margin-bottom:4px">posiciones</div>${P.length ? h`<table><thead><tr><th>Símbolo</th><th class="n">Entrada</th><th class="n">Marca</th><th class="n">PnL</th><th class="n">Edad</th></tr></thead><tbody>${P.map(p => h`<tr><td><b>${p.sym}</b> <span class="mute small">${p.mint_short}</span></td><td class="n">${price(p.entry)}</td><td class="n">${price(p.mark)}</td><td class="n ${pol(p.pnl)}">${sgn(p.pnl, 2)} $</td><td class="n mute">${isNum(p.age_h) ? num(p.age_h, 1) + ' h' : '—'}</td></tr>`)}</tbody></table>` : h`<div class="empty">sin posiciones: la regla no se cumple en ningún nombre del universo</div>`}</div>
+   <div><div class="small mute" style="margin-bottom:4px">universo (regla por nombre)</div>${S.length ? h`<table><thead><tr><th>Símbolo</th><th>ST</th><th class="n">BB</th><th class="n">ATR7/21</th><th>entrada</th></tr></thead><tbody>${S.map(s => h`<tr><td><b>${s.sym || s.mint_short}</b></td><td>${s.st_green ? h`<span class="badge good">verde</span>` : h`<span class="badge">rojo</span>`}</td><td class="n">${isNum(s.bb_pos) ? num(s.bb_pos, 2) : '—'}</td><td class="n">${isNum(s.atr_ratio) ? num(s.atr_ratio, 2) : '—'}</td><td>${s.entry ? h`<span class="badge good">✔</span>` : h`<span class="mute">—</span>`}</td></tr>`)}</tbody></table>` : h`<div class="empty">sin señales aún</div>`}</div></div>`);
+}
 function renderDirector(ov) {
   const d = ov.director; set('dir-badge', badge(d));
   if (!ok(d)) { set('dir-mode', ''); set('dir-body', h`<div class="empty">sin director_state.json (el Director aún no ha corrido en esta máquina)</div>`); return; }
@@ -384,7 +396,7 @@ function renderControls(ov) {
    ${(hs.supervisor_tail || []).length ? h`<div class="small mute" style="margin-top:10px">supervisor.log</div><pre>${hs.supervisor_tail.join('\n')}</pre>` : ''}`);
 }
 function renderFooter(ov) {
-  const s = ov.solana || {}, th = [['estado', s], ['curva', s.equity_curve], ['candidatos', s.funnel], ['cerebro', s.brain], ['insider', ov.insider], ['copytrade', ov.copytrade], ['riesgo HL', ov.hl], ['director', ov.director], ['operador', ov.operator]]
+  const s = ov.solana || {}, th = [['estado', s], ['curva', s.equity_curve], ['candidatos', s.funnel], ['cerebro', s.brain], ['insider', ov.insider], ['copytrade', ov.copytrade], ['riesgo HL', ov.hl], ['director', ov.director], ['operador', ov.operator], ['tendencia', ov.trend]]
     .filter(([, x]) => x && isNum(x.fresh_after_s)).map(([n, x]) => `${n} ${ageTxt(x.fresh_after_s)}`);
   set('footer', h`Datos del propio bot (ficheros de estado en ${(ov.meta || {}).host || 'la máquina'}); ningún valor se calcula fuera de la máquina. Umbrales de frescura: ${th.join(' · ') || '—'}.`);
 }

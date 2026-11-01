@@ -659,3 +659,9 @@ Backups: memebot.py / copytrade_paper.py / config.json / DECISIONS.md .bak_rugpu
 - Sus datos confirman el diagnóstico: media global −9 %/op (PF 0,15), con vetos −3,4 % (PF 0,30). La mejora con más valor esperado sigue siendo la jugada de tendencia sobre tokens líquidos.
 - Tests: 115.
 
+## 2026-11-01 22:50 (Madrid) — Jugada de tendencia sobre tokens líquidos de Solana: construida en papel; la prueba en Keel sale negativa (Claude)
+- `trend_spot.py`: la regla validada (SuperTrend 10/3 + Bollinger 20/2 > 0,5 + ATR7/21 > 0,85, diaria, solo largos) sobre los tokens de Solana con más volumen y liquidez (GeckoTerminal), evaluación tras el cierre UTC, marcado cada 15 min, registro `trades_solana_trend_paper.csv`, estado `state/trend_status.json`, tarjeta "Tendencia" en el panel, jugada `trend` en el Director (papel; off si PF < 1 con n ≥ 15; nunca a real sin `trend_live` del dueño). 7 tests.
+- Comprobación previa en Keel (misma regla, cesta manual de 31 perps del ecosistema Solana, top-5 causal semanal por volumen): ventana completa Sharpe −0,03 / −36 % / DD −72 %; fuera de muestra Sharpe −0,86 / −29 % / PF 0,63. **La ventaja de la regla está en los grandes (BTC/ETH/SOL…), no en los tokens de Solana.** Conclusión honesta: no es la mejora que buscábamos; se deja en papel como evidencia hacia delante y no se le dedica más capital ni más trabajo salvo que la evidencia en papel diga lo contrario.
+- Lo que sí sostiene la evidencia: pata Hyperliquid causal (OOS 1,15) en paper en Keel; memebot con costes fijos eliminados (rent recuperado: 28 cuentas, 0,042 SOL) y Director; agente insider en tiempo real.
+- Tests: 123.
+
