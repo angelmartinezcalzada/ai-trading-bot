@@ -11,8 +11,9 @@ for EX in $(python3 -c "import json;print(' '.join(json.load(open('config.json')
       ARGS=""
       if [ "$MODE" = "live" ] && [ -f keys.env ]; then set -a; . ./keys.env; set +a; export LIVE_CONFIRM=YES; ARGS="--live"; fi
       echo "$(date -Is) [$EX] start mode=$MODE" >> supervisor.log
-      python3 bot.py --exchange "$EX" $ARGS >> "stdout_$EX.log" 2>&1; RC=$?
-      echo "$(date -Is) [$EX] exited code $RC" >> supervisor.log; sleep 5
+      T0=$(date +%s); python3 bot.py --exchange "$EX" $ARGS >> "stdout_$EX.log" 2>&1; RC=$?
+      echo "$(date -Is) [$EX] exited code $RC" >> supervisor.log
+      if [ $(( $(date +%s) - T0 )) -lt 15 ]; then sleep 60; else sleep 5; fi   # died at startup (duplicate, missing module...): do not churn every 5 s
     done ) &
 done
 ( while [ ! -f STOP ]; do echo "$(date -Is) [dashboard] start" >> supervisor.log; python3 dashboard.py >> stdout_dashboard.log 2>&1; sleep 5; done ) &
@@ -22,7 +23,7 @@ done
 # Tendencia sobre tokens líquidos (trend_spot.py): papel; evalúa una vez al día y marca cada 15 min
 ( while [ ! -f STOP ]; do echo "$(date -Is) [trend] start" >> supervisor.log; python3 trend_spot.py --loop >> stdout_trend.log 2>&1; sleep 30; done ) &
 # Solana Tracker en sombra (st_shadow_daemon.py, de Grok 1-nov): solo si keys.env tiene SOLANATRACKER_API_KEY
-( while [ ! -f STOP ]; do if [ -f keys.env ] && grep -q '^SOLANATRACKER_API_KEY=.' keys.env; then pgrep -f "python3 st_shadow_daemo[n].py" >/dev/null && { sleep 60; continue; }; echo "2026-11-01T20:54:20+00:00 [st_shadow] start" >> supervisor.log; SOLANATRACKER_API_KEY="" python3 st_shadow_daemon.py >> stdout_st_shadow.log 2>&1; fi; sleep 60; done ) &
+( while [ ! -f STOP ]; do if [ -f keys.env ] && grep -q '^SOLANATRACKER_API_KEY=.' keys.env; then pgrep -f "python3 st_shadow_daemo[n].py" >/dev/null && { sleep 60; continue; }; echo "$(date -Is) [st_shadow] start" >> supervisor.log; SOLANATRACKER_API_KEY="$(grep '^SOLANATRACKER_API_KEY=' keys.env | head -1 | cut -d= -f2-)" python3 st_shadow_daemon.py >> stdout_st_shadow.log 2>&1; fi; sleep 60; done ) &   # only this key, not every secret in keys.env
 # Operador automático (operador.py): revisión horaria, acciones seguras (rent de ATAs, procesos colgados, Director, logs), DECISIONS.md, alertas
 ( sleep 120; while [ ! -f STOP ]; do echo "$(date -Is) [operator] review" >> supervisor.log
     ( [ -f keys.env ] && grep -q '^ALERT_CMD=.' keys.env && export ALERT_CMD="$(grep '^ALERT_CMD=' keys.env | head -1 | cut -d= -f2- | sed "s/^'//;s/'$//")"; python3 operador.py --once >> stdout_operator.log 2>&1 )
