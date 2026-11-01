@@ -55,7 +55,7 @@
       "daily_max_drawdown_pct": 0.05
     },
     "coinbase": {
-      "mode": "live",
+      "mode": "paper",
       "enabled": true,
       "min_quote_volume_24h": 1000000,
       "fee_taker_pct": 1.2,
