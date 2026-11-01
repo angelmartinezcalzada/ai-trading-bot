@@ -511,7 +511,7 @@ class Meme:
             ok, txt = live_sol.sellable(m, int(q["outAmount"]), slip, s.c["max_roundtrip_loss_pct"], lam)   # expected fill, NOT otherAmountThreshold (= outAmount x (1-slip)): the floor inflated rt by >= 1% and the EV>=3x gate blocked every live buy (31-oct)
             if not ok: log.warning("[solana] LIVE buy %s blocked: not sellable (%s)", p["baseToken"]["symbol"], txt); return
             imp_ = float(q.get("priceImpactPct") or 0)*100; rt_ = float(txt.split("=")[1].rstrip("%")); ev_ = p.get("_ev")
-            if imp_ > 1.0: log.warning("[solana] LIVE buy %s blocked: impact %.2f%% > 1%% (100bps)", p["baseToken"]["symbol"], imp_); return
+            if imp_ > s.c.get("max_buy_impact_pct", 1.0): log.warning("[solana] LIVE buy %s blocked: impact %.2f%% > max_buy_impact_pct %.2f%%", p["baseToken"]["symbol"], imp_, s.c.get("max_buy_impact_pct", 1.0)); return
             if ev_ is None or ev_ < 3*max(rt_, 0): log.warning("[solana] LIVE buy %s blocked: EV %s%% < 3x real round-trip %.2f%%", p["baseToken"]["symbol"], ev_, rt_); return
             before = live_sol.token_balances().get(m, (0, p.get("_dec") or 6))[0]
             sig = live_sol.swap(q)
@@ -1015,6 +1015,7 @@ class Meme:
             thr = c["min_score"] + pb["score_adj"] + (c.get("news_riskoff_score_add", 10) if ns.get("risk_off") else 0) - (5 if nbo.get(rec["sym"].upper(), 0) > time.time() else 0)
             if nb.get(rec["sym"].upper(), 0) > time.time() and not f: f.append("news_negative")
             # manipulated-pump play: coordinated accumulation but provably sellable; only soft (concentration/score) failures allowed
+            if (comp.get("h1") or 0) > c.get("max_entry_h1_pct", 50) and "already_pumped" not in f: f.append("already_pumped")   # owner 01-nov: no chasing a token already up > 50 % in 1 h
             setup = [k for k, ok in (("rug_insiders", rc["insiders"] >= 1), ("concentrated", rc["top10"] > c["max_top10_pct"]), ("insider_accum", I["conv"] >= 3),
                                      ("whales", (comp.get("whale_buys") or 0) >= 2), ("bundled_bots", (comp.get("bot_wallets") or 0) >= 3)) if ok]
             hard = [x for x in f if x not in SOFT]
@@ -1034,7 +1035,11 @@ class Meme:
             elite_trig = I["elite"] >= 3 and I["sells"] < 3 and I["w"] >= 0.45      # 3+ elite wallets bought it <30 min ago
             if elite_trig and not f: rec["pass"] = True; rec["trigger"] = "insider_elite_group"; log.warning("[solana] INSIDER TRIGGER %s elite=%d conv=%d tok=%s (filters passed)", rec["sym"], I["elite"], I["conv"], I["tok"])
             elif dec and dec["active"]: rec["pass"] = not f and dec.get("ev_ok", dec["ev_pct"] > 0) and sc >= c.get("brain_min_score", 45)
-            else: rec["pass"] = not f and sc >= thr
+            else:
+                rec["pass"] = not f and sc >= thr
+                if rec["pass"] and c.get("alt_gate", True) and rec.get("roundtrip_loss_pct") is not None and rec["roundtrip_loss_pct"] > c.get("alt_gate_max_rt_cost_pct", 1.5):
+                    rec["pass"] = False; f.append("alt_rt_cost")                  # ALT gate (owner 01-nov): without the model, only cheap-to-exit tokens
+                if rec["pass"]: rec["gate"] = "alt"
             if pump_ok and not rec["pass"] and not c.get("pump_play", False):   # PAPER-ONLY pump-play: never reaches s.buy
                 try:
                     sf_ = scam.check(m, rec["sym"], p.get("priceUsd"), c, rec.get("roundtrip_loss_pct"))
@@ -1064,7 +1069,7 @@ class Meme:
                 C_ = s.__dict__.setdefault("_ttl", {}); dc_ = C_.get(("depth", m))
                 if dc_ and time.time()-dc_[0] < 600: curve, cap = dc_[1]
                 else: curve, cap = s.brain.depth_curve(s.quote, m, USDC); C_[("depth", m)] = (time.time(), (curve, cap)); rec["depth"] = curve
-                if c.get("exit_mode") == "trail" and not (dec and dec["active"]): size = s.equity()*c.get("size_pct", 8)/100
+                if c.get("exit_mode") == "trail" and not (dec and dec["active"]): size = s.equity()*(c.get("alt_gate_size_pct", 4) if c.get("alt_gate", True) else c.get("size_pct", 8))/100   # ALT gate: 4 % without the model (owner 01-nov)
                 size = min(size, cap, s.cash*0.98)
                 if rec.get("trigger") == "pump_play": size *= c.get("pump_size_frac", 0.3); p["_play"] = "pump"
                 else: p["_play"] = None

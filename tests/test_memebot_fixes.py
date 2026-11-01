@@ -225,3 +225,13 @@ def test_ata_sweep_queues_only_fully_sold_live_mints_and_retries_failures(monkey
     s.pos = {}; s._ata_q["A"]["t"] = time.time() - 60; s._ata_q["A"]["n"] = 2
     memebot.Meme.ata_sweep(s); assert "A" not in s._ata_q                                   # third failure: dropped with a warning
     s2 = NS(live=False, c={}, pos={}, _ata_q={"X": {"t": 0, "n": 0}}); calls.clear(); memebot.Meme.ata_sweep(s2); assert calls == []   # paper: never
+
+
+def test_live_buy_impact_cap_is_configurable(monkeypatch):
+    """owner 01-nov: max_buy_impact_pct 5.5 (default stays 1.0)"""
+    ls = fake_live_sol(monkeypatch, quote=lambda inp, out, lam, slip: {"outAmount": "1000000", "otherAmountThreshold": "990000", "priceImpactPct": "0.03"})
+    p = {"baseToken": {"symbol": "X"}, "liquidity": {"usd": 100000}, "_ev": 5.0, "_dec": 6}
+    s = NS(sol=100.0, c={"max_roundtrip_loss_pct": 3}, pos={}, seen={}, live=True)
+    memebot.Meme._buy_live(s, "MINT", p, 50, "why", 4.0); assert ls.calls["swap"] == 0          # 3 % impact > default 1 %
+    s = NS(sol=100.0, c={"max_roundtrip_loss_pct": 3, "max_buy_impact_pct": 5.5}, pos={}, seen={}, live=True)
+    memebot.Meme._buy_live(s, "MINT", p, 50, "why", 4.0); assert ls.calls["swap"] == 1          # allowed up to 5.5 %

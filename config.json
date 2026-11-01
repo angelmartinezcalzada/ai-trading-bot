@@ -81,7 +81,7 @@
       "max_top10_pct": 20,
       "min_lp_locked_pct": 90,
       "max_roundtrip_loss_pct": 3,
-      "min_score": 45,
+      "min_score": 50,
       "slippage_bps": 300,
       "priority_fee_sol": 5e-05,
       "scan_seconds": 45,
@@ -156,7 +156,7 @@
       "size_pct": 8,
       "max_rc_norm": 20,
       "min_holders": 5000,
-      "pump_paper": true,
+      "pump_paper": false,
       "pump_paper_extra_slip_pct": 1.0,
       "rc_timeout_s": 8,
       "rc_fail_cache_s": 180,
@@ -164,7 +164,13 @@
       "hardfail_skip_s": 3600,
       "writeoff_sellfail": 5,
       "writeoff_min_s": 900,
-      "writeoff_max_liq_usd": 1000
+      "writeoff_max_liq_usd": 1000,
+      "max_buy_slip_bps": 550,
+      "max_buy_impact_pct": 5.5,
+      "alt_gate": true,
+      "alt_gate_size_pct": 4,
+      "alt_gate_max_rt_cost_pct": 1.5,
+      "max_entry_h1_pct": 50
     }
   },
   "swing": {

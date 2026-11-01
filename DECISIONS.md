@@ -652,3 +652,10 @@ Backups: memebot.py / copytrade_paper.py / config.json / DECISIONS.md .bak_rugpu
 - Instalación en un comando (`install.sh`: dependencias, keys.env vacío, contraseña del panel, tests) y parada ordenada (`stop.sh`); `requirements.txt`. Guía de operación para Àngel: `OPERACION.md`. `HANDOFF_GROK.md` queda superado.
 - Tests: 105 (operador: hallazgos, acciones acotadas, dry run sin escrituras, DECISIONS/estado/alertas, informe diario).
 
+## 2026-11-01 22:10 (Madrid) — Traspaso de Grok (21:30) recibido por chat e incorporado (Claude)
+- Estado de la máquina de Grok a las 21:30: Solana REAL ~47,4 $ en efectivo, 0 posiciones, fichero STOP (bots parados 21:18), cerebro en sombra (554 filas; baseline OOS ≈ −7,3 %), rutinas de Grok sin cupo. El wallet se rota a uno nuevo que solo existe en el PC de Àngel (tools/wallet_rotar.py).
+- Decisiones de Àngel del 31-oct/1-nov que esta versión no tenía y que se adoptan (config.json): `max_buy_slip_bps` 550 y `max_buy_impact_pct` 5,5 (tope configurable en `_buy_live`; antes 1 % fijo), `pump_paper` false, veto "ya bombeada" (`max_entry_h1_pct` 50 → `already_pumped`), puerta ALT sin modelo: tamaño `alt_gate_size_pct` 4 % y round-trip ≤ `alt_gate_max_rt_cost_pct` 1,5 % (`alt_rt_cost`), `min_score` 50 (sus propios datos: score ≥ 50 → −1,16 %/PF 0,74 frente a ≥ 45 → −4,30 %/PF 0,21; solo endurece).
+- Lo que la versión de Grok tiene y esta NO (el código solo existe en su máquina): filtro Solana Tracker (veredicto ST en la puerta ALT, cupo 400/día, daemon sombra), señal X (buzz humano vs shill), veto marca/stablecoin-copy. Pendiente: si Àngel consigue un zip de esa carpeta (sin keys.env ni wallet), se fusionan.
+- Sus datos confirman el diagnóstico: media global −9 %/op (PF 0,15), con vetos −3,4 % (PF 0,30). La mejora con más valor esperado sigue siendo la jugada de tendencia sobre tokens líquidos.
+- Tests: 115.
+
