@@ -12,7 +12,8 @@ SYSTEM = "11111111111111111111111111111111"
 
 @pytest.fixture
 def fake(monkeypatch, tmp_path):
-    monkeypatch.chdir(tmp_path); owner = Keypair(); st = {"sent": [], "bal": 0.05, "tokens": {}, "empty": []}
+    monkeypatch.chdir(tmp_path); monkeypatch.setitem(sys.modules, "live_sol", live_sol)   # mover() imports live_sol at call time: pin the object we patch
+    owner = Keypair(); st = {"sent": [], "bal": 0.05, "tokens": {}, "empty": []}
     def rpc(method, params):
         if method == "getBalance": return {"value": int(st["bal"] * 1e9)}
         if method == "getLatestBlockhash": return {"value": {"blockhash": "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi"}}
