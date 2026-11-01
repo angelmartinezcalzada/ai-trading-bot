@@ -71,7 +71,10 @@ Lo que **nunca** hace nada automático: relajar vetos, tamaños o stops; cambiar
    `config.json` → `exchanges.solana.mode: "paper"`.
 3. **Director al mando o en sombra**: sale de la sombra a las 24 h; `director_enabled: false` lo deja en sombra para siempre.
 4. **Hyperliquid real**: solo en la web de Keel, con ≥150 $ y ≥21 días / ≥20 evaluaciones de paper con paridad (ver `hl_leg/hl_paper.json`).
-5. **Alertas**: pon en `keys.env` `ALERT_CMD='curl -s -X POST --data-binary @- https://…'` (o un bot de Telegram) y recibirás cada aviso.
+5. **Clave expuesta** (pegada en un chat, guardada en otra máquina): rota el wallet. Con el bot parado y sin posiciones:
+   `python3 tools/wallet_rotar.py --nuevo` (crea uno que solo existe en tu PC), `python3 tools/wallet_rotar.py --mover` (dry run)
+   y `--mover --yes` (cierra cuentas vacías, mueve todo el SOL al nuevo y lo activa). La clave vieja deja de valer nada.
+6. **Alertas**: pon en `keys.env` `ALERT_CMD='curl -s -X POST --data-binary @- https://…'` (o un bot de Telegram) y recibirás cada aviso.
 
 ## 4. Mirar el bot
 
