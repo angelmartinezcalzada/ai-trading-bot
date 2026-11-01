@@ -6,3 +6,5 @@ pytest>=8
 
 websockets>=12
 pandas>=2.0
+PyJWT>=2.8
+cryptography>=42
