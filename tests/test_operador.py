@@ -87,3 +87,13 @@ def test_dry_run_writes_nothing(root):
 def test_overview_exposes_operator_section(root):
     d, now = root; ov = dash_data.build_overview(d, now); o = ov["operator"]
     assert o["available"] and o["worst"] == "warn" and len(o["findings"]) == 2 and o["actions"][0]["action"] == "rotate_logs" and o["alerts"][0]["code"] == "errors_1h"
+
+
+def test_review_with_brain_file_but_no_status_does_not_crash(tmp_path):
+    """fresh machine: data/brain_state.json ships with the repo while status_solana.json does not exist yet"""
+    make_empty(str(tmp_path)); os.makedirs(tmp_path / "data", exist_ok=True)
+    json.dump({"updated": "2026-11-01T10:00:00", "n_labelled": 10, "active": False, "oos": {}, "base": 0.4, "weights": {}, "avg_win": 0.1, "avg_loss": 0.05, "n": 10}, open(tmp_path / "data" / "brain_state.json", "w"))
+    now = time.time(); ov = dash_data.build_overview(str(tmp_path), now)
+    assert ov["solana"]["brain"]["available"] and not ov["solana"]["available"]
+    F, S = op.review(ov, json.load(open(tmp_path / "config.json")), now)
+    assert "sombra" in S["brain"] and any(f["code"] == "solana_down" or f["code"] == "director_missing" for f in F)

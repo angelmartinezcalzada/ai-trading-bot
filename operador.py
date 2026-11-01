@@ -51,7 +51,7 @@ def review(ov, cfg, now):
         elif e.get("status_age_s") is not None and e["status_age_s"] > HUNG_S: add("warn", f"{ex}_hung", f"{ex} vivo pero su status lleva {e['status_age_s']/60:.0f} min sin escribirse")
         if e.get("killed"): add("warn", f"{ex}_killed", f"{ex} con KILL_{ex}: no abre entradas y cierra posiciones")
     if ov.get("health", {}).get("available") and not (ov["health"].get("insider_pid")): add("warn", "insider_down", "insider.py sin proceso (inteligencia de wallets parada)")
-    S = ov.get("solana") or {}
+    S = ov.get("solana") or {}; br = S.get("brain") or {}   # brain/limits can exist (files) while the status does not: never reference them unbound
     if S.get("available"):
         if not S.get("fresh"): add("warn", "solana_stale", f"status_solana.json obsoleto ({(S.get('age_s') or 0)/60:.0f} min)")
         if S.get("halted"): add("warn", "solana_halted", "Solana en halt (stop diario o kill switch): sin entradas hasta el día siguiente o override")
@@ -67,7 +67,6 @@ def review(ov, cfg, now):
             if isinstance(pf, (int, float)) and pf > 300: add("warn", "scan_slow", f"escaneo de {pf:.0f} s (RugCheck {sc.get('rc_fetched')}/{sc.get('rc_needed')}, {sc.get('rc_past_budget')} fuera de presupuesto)")
         for p in S.get("positions") or []:
             if (p.get("sellfail") or 0) >= 3 or (p.get("noroute") or 0) >= 5: add("warn", f"pos_stuck_{p.get('sym')}", f"posición {p.get('sym')} con {p.get('sellfail', 0)} ventas fallidas / {p.get('noroute', 0)} sin ruta")
-        br = S.get("brain") or {}
         if br.get("available") and not br.get("fresh"): add("warn", "brain_stale", f"cerebro sin reentrenar desde {br.get('updated')}")
         k = S.get("kpi_30d") or {}
         if k.get("available") and (k.get("n") or 0) >= 20 and isinstance(k.get("profit_factor"), (int, float)) and k["profit_factor"] < 1:

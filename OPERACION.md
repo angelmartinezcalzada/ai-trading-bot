@@ -31,7 +31,13 @@ Migración desde la instalación actual (`/workspace/ai-trading-bot`): `./stop.s
    curl -fsSL https://raw.githubusercontent.com/angelmartinezcalzada/ai-trading-bot/main/wsl_bootstrap.sh | bash
    ```
    Instala lo necesario, pasa los tests y arranca el bot. Al final imprime la contraseña del panel.
-3. Abre en el navegador de Windows `http://localhost:8787/`.
+3. **Para que siga corriendo con la ventana cerrada y arranque solo con Windows** (si no, WSL mata los procesos al cerrar Ubuntu):
+   PowerShell **como administrador**:
+   ```powershell
+   irm https://raw.githubusercontent.com/angelmartinezcalzada/ai-trading-bot/main/windows/tarea.ps1 | iex
+   ```
+   Crea la tarea "TradingBot" del Programador de tareas. Parar: `Stop-ScheduledTask -TaskName TradingBot`; arrancar: `Start-ScheduledTask -TaskName TradingBot`.
+4. Abre en el navegador de Windows `http://localhost:8787/`.
 
 Sin `solana_wallet.json` el bot de Solana opera en **papel** (sin dinero). Cuando recuperes el wallet de la máquina de Grok,
 cópialo a `~/ai-trading-bot/solana_wallet.json` dentro de Ubuntu (`chmod 600`), pon `"mode": "live"` en `config.json` y reinicia
