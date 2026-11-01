@@ -28,6 +28,8 @@ done
 ( sleep 120; while [ ! -f STOP ]; do echo "$(date -Is) [operator] review" >> supervisor.log
     ( [ -f keys.env ] && grep -q '^ALERT_CMD=.' keys.env && export ALERT_CMD="$(grep '^ALERT_CMD=' keys.env | head -1 | cut -d= -f2- | sed "s/^'//;s/'$//")"; python3 operador.py --once >> stdout_operator.log 2>&1 )
     sleep 3600; done ) &
+# Contexto de mercado horario (context.py): SOL/BTC, F&G, riesgo-off, calor de lanzamientos, amplitud -> data/context_now.json (cerebro, Director, operador, panel)
+( sleep 30; while [ ! -f STOP ]; do [ -f context.py ] && { echo "$(date -Is) [context] once" >> supervisor.log; timeout 300 python3 context.py --once >> stdout_context.log 2>&1; }; sleep 3600; done ) &
 # Hyperliquid context logger (Coinversa) - only when keys.env has COINVERSA_API_KEY; never trades
 ( while [ ! -f STOP ]; do
     if [ -f keys.env ] && grep -q '^COINVERSA_API_KEY=.' keys.env; then

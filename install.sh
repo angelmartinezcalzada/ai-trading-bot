@@ -18,6 +18,7 @@ K
   chmod 600 keys.env; echo "== keys.env creado (vacío): rellena las claves que uses"
 fi
 if [ ! -f dashboard_password.txt ]; then python3 -c 'import secrets; print(secrets.token_urlsafe(12))' > dashboard_password.txt; chmod 600 dashboard_password.txt; echo "== contraseña del panel generada en dashboard_password.txt"; fi
+if [ ! -f insider_wallets.json ] && [ -f data/insider_wallets.json ]; then cp data/insider_wallets.json insider_wallets.json; echo "== insider_wallets.json sembrado desde data/ (el ranking lo depura en el primer ciclo)"; fi
 if [ ! -f solana_wallet.json ]; then echo "== AVISO: sin solana_wallet.json -> Solana solo en papel hasta que copies el wallet (chmod 600)"; fi
 echo "== tests"; if python3 -m pytest -q tests/ 2>&1 | tail -3; then rm -f tests_failed.txt; else date -Is > tests_failed.txt; echo "== AVISO: hay tests que fallan (ver tests_failed.txt); la instalación sigue, el operador lo avisará"; fi
 echo "== modo actual por exchange:"; python3 -c "import json; c=json.load(open('config.json'))['exchanges']; print({k: v.get('mode','paper') for k, v in c.items()})"

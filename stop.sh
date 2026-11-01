@@ -2,5 +2,5 @@
 # Para todo de forma ordenada: STOP hace salir a los bucles de run_forever; los procesos reciben SIGTERM (guardan estado al salir).
 cd "$(dirname "$0")"; touch STOP
 pkill -f "run_foreve[r].sh" 2>/dev/null || true          # the supervisor loops themselves, so a restart never duplicates them
-for pat in "python3 bot.p[y] --exchange" "python3 dashboar[d].py" "python3 inside[r].py daemon" "python3 insider_w[s].py" "python3 trend_spo[t].py" "python3 st_shadow_daemo[n].py" "python3 operado[r].py" "hl_leg.hl_contex[t]" "cloudflare[d] tunnel"; do pkill -f "$pat" 2>/dev/null || true; done
+for pat in "python3 bot.p[y] --exchange" "python3 dashboar[d].py" "python3 inside[r].py daemon" "python3 insider_w[s].py" "python3 trend_spo[t].py" "python3 st_shadow_daemo[n].py" "python3 operado[r].py" "python3 contex[t].py" "hl_leg.hl_contex[t]" "cloudflare[d] tunnel"; do pkill -f "$pat" 2>/dev/null || true; done
 sleep 2; pgrep -af "python3 bot.p[y] --exchange" >/dev/null && echo "aún vivos (esperando):" && pgrep -af "python3 bot.p[y] --exchange" || echo "todo parado"

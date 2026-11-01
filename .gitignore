@@ -34,3 +34,11 @@ st_shadow.jsonl
 research/st_shadow.jsonl
 data/st_forward.jsonl
 panel_v2_state.json
+# 02-nov: estado de los módulos nuevos (ranking de insiders, contexto horario, archivo de etiquetas del cerebro)
+insider_rank.json
+insider_live_state.json
+insider_wallet_live.json
+data/context_now.json
+data/context.jsonl
+data/labels_solana.jsonl
+research/insider_rank_log.jsonl
