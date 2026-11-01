@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Bot de trading · en directo</title>
+<style>
+/* ---- tokens (dataviz dark) ---- */
+:root{--bg:#0d0d0d;--card:#1a1a19;--ink:#f0efec;--ink2:#c3c2b7;--mute:#898781;--grid:#2c2c2a;--line:rgba(255,255,255,.10);
+ --blue:#3987e5;--red:#e66767;--mid:#383835;--good:#0ca30c;--warn:#fab219;--serious:#ec835a;--crit:#d03b3b;--r:12px}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow-x:hidden}
+a{color:var(--blue)}button{font:inherit;color:var(--ink);background:#262624;border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer}
+button:hover{background:#30302d}button:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+button.danger{border-color:var(--crit);color:#ffb3b3}button.sm{padding:3px 8px;font-size:12px}button[aria-pressed=true]{background:var(--blue);border-color:var(--blue);color:#fff}
+main{max-width:1440px;margin:0 auto;padding:12px 16px 32px}main.grid{display:grid;grid-template-columns:1fr;gap:12px}
+@media(min-width:1024px){main.grid{grid-template-columns:repeat(12,minmax(0,1fr))}.c4{grid-column:span 4}.c6{grid-column:span 6}.c8{grid-column:span 8}.c12{grid-column:span 12}}
+section{min-width:0}.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;min-width:0}
+h2{font-size:14px;font-weight:600;color:var(--ink2);margin:0 0 10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}h2 .sp{flex:1}
+.mute{color:var(--mute)}.ink2{color:var(--ink2)}.small{font-size:12px}.pos{color:var(--blue)}.neg{color:var(--red)}.nowrap{white-space:nowrap}
+.badge{display:inline-block;font-size:11px;font-weight:600;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--ink2);vertical-align:middle}
+.badge.warn{border-color:var(--warn);color:var(--warn)}.badge.real{border-color:var(--serious);color:var(--serious)}.badge.good{border-color:var(--good);color:#5fd45f}
+.badge.crit{border-color:var(--crit);color:#ff9d9d}.badge.blue{border-color:var(--blue);color:#8fbcf3}
+/* top bar */
+#topbar{position:sticky;top:0;z-index:5;background:rgba(13,13,13,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+#topbar .in{max-width:1440px;margin:0 auto;padding:8px 16px;display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap}
+#topbar .t{font-weight:700;display:flex;align-items:center;gap:8px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--mute);display:inline-block}.dot.on{background:var(--good);animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.25}}@media(prefers-reduced-motion:reduce){.dot.on{animation:none}}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--ink2);white-space:nowrap}
+.chip .ic{font-size:11px}.chip.good .ic{color:var(--good)}.chip.warn .ic{color:var(--warn)}.chip.serious .ic{color:var(--serious)}.chip.crit .ic{color:var(--crit)}.chip.crit{border-color:var(--crit)}
+#conn{color:var(--warn);font-weight:600;display:none}body.offline #conn{display:inline}body.offline main{opacity:.6}
+/* kpi */
+#kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}@media(min-width:640px){#kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(min-width:1024px){#kpis{grid-template-columns:repeat(6,minmax(0,1fr))}}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px;min-width:0}.tile .l{font-size:12px;color:var(--mute)}
+.tile .v{font-size:24px;font-weight:600;line-height:1.2;margin:4px 0 2px;overflow-wrap:anywhere}.tile .s{font-size:12px;color:var(--ink2)}
+/* tables */
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+th{text-align:left;color:var(--mute);font-weight:500;font-size:12px;padding:4px 8px;border-bottom:1px solid var(--grid);white-space:nowrap}
+.wide table{min-width:760px}td{padding:5px 8px;border-bottom:1px solid var(--grid);vertical-align:top}td.n,th.n{text-align:right}tr:last-child td{border-bottom:0}
+.pbar{display:inline-block;width:70px;height:4px;background:var(--mid);border-radius:2px;position:relative;vertical-align:middle;margin-right:6px}
+.pbar b{position:absolute;left:0;top:0;height:100%;background:var(--blue);border-radius:2px}.pbar i{position:absolute;top:-3px;width:2px;height:10px;background:var(--warn)}
+/* charts */
+.chart{position:relative;min-width:0}.chart svg{display:block;width:100%;height:auto;overflow:visible}
+.chart text{fill:var(--mute);font-size:11px;font-variant-numeric:tabular-nums}.chart .lbl{fill:var(--ink2);font-weight:600}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 8px}
+#tip{position:fixed;z-index:9;pointer-events:none;background:#262624;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12px;display:none;max-width:260px}
+#tip b{font-size:13px}#tip .k{color:var(--mute)}
+/* lists */
+.feed{display:flex;flex-direction:column;gap:0;max-height:460px;overflow:auto}.feed .row{display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--grid);font-size:13px;align-items:baseline}
+.feed .row .t{color:var(--mute);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}.feed .row .m{flex:1;min-width:0;overflow-wrap:anywhere}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:13px}.kv .k{color:var(--mute)}
+.cols3{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:1024px){.cols3{grid-template-columns:repeat(3,minmax(0,1fr))}}.cols3>div{min-width:0;overflow-x:auto}
+.cexgrid{display:grid;grid-template-columns:1fr;gap:12px}@media(min-width:640px){.cexgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.ctl{display:grid;grid-template-columns:1fr;gap:10px}@media(min-width:640px){.ctl{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.ctl .ex{border:1px solid var(--line);border-radius:8px;padding:10px}.ctl .ex .b{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+details summary{cursor:pointer;color:var(--ink2);font-weight:600;list-style:none}details summary::before{content:"▸ ";color:var(--mute)}details[open] summary::before{content:"▾ "}
+pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:var(--ink2)}
+@media(max-width:639px){.wide::before{content:"desliza → para ver PnL, stop, banderas y Cerrar";display:block;font-size:11px;color:var(--mute);margin-bottom:4px}.feed .row{flex-wrap:wrap}.feed .row .m{flex-basis:100%}#chips{flex-wrap:nowrap!important;overflow-x:auto;max-width:100%;min-width:0;flex:1 1 100%;scrollbar-width:none;padding-bottom:2px}}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#262624;border:1px solid var(--line);border-radius:10px;padding:10px 16px;z-index:10;display:none;max-width:90vw}
+#toast.bad{border-color:var(--crit)}footer{color:var(--mute);font-size:12px;padding:8px 0}
+.empty{color:var(--mute);padding:8px 0}.hero{font-size:30px;font-weight:600}
+</style>
+</head>
+<body>
+<header id="topbar"><div class="in">
+ <span class="t"><span class="dot" id="livedot"></span>Bot de trading · en directo</span>
+ <span class="small mute">actualizado <span id="upd">—</span></span>
+ <span id="conn" class="small"></span>
+ <span id="chips" style="display:flex;gap:6px;flex-wrap:wrap"></span>
+ <span id="tunnel" class="small"></span>
+</div></header>
+<main class="grid">
+ <section id="kpis" class="c12" aria-label="Indicadores"></section>
+ <section id="operator" class="card c12" aria-label="Operador automático"><h2>Operador automático <span id="op-badge"></span><span class="sp"></span><span id="op-worst"></span></h2><div id="op-body"></div></section>
+ <section id="equity" class="card c8" aria-label="Curva de patrimonio">
+  <h2>Curva de patrimonio Solana <span id="eq-badge"></span><span class="sp"></span><span id="eq-sum" class="small mute"></span></h2>
+  <div class="filters" role="group" aria-label="Rango">
+   <button class="sm" data-range="24h" aria-pressed="true">24 h</button><button class="sm" data-range="7d" aria-pressed="false">7 d</button>
+   <button class="sm" data-toggle="eqTable" aria-pressed="false">tabla</button>
+  </div>
+  <div id="eq-body" class="chart"><div class="empty">esperando datos…</div></div>
+ </section>
+ <section id="daily" class="card c4" aria-label="PnL diario 14 días">
+  <h2>PnL diario · 14 días <span id="dp-badge"></span><span class="sp"></span><button class="sm" data-toggle="dailyTable" aria-pressed="false">tabla</button></h2>
+  <div id="dp-sum" class="small mute" style="margin-bottom:6px"></div>
+  <div id="dp-body" class="chart"><div class="empty">esperando datos…</div></div>
+ </section>
+ <section id="positions" class="card c12" aria-label="Posiciones abiertas"><h2>Posiciones abiertas <span id="pos-badge"></span></h2><div id="pos-body" class="scroll wide"></div></section>
+ <section id="scan" class="card c12" aria-label="Escaneo y embudo"><h2>Escaneo y embudo de candidatos <span id="scan-badge"></span></h2><div id="scan-body"></div></section>
+ <section id="trades" class="card c12" aria-label="Operaciones recientes"><h2>Operaciones recientes <span id="tr-badge"></span></h2><div id="tr-body" class="scroll"></div></section>
+ <section id="intel" class="c12 cols3" aria-label="Inteligencia">
+  <div class="card"><h2>Insiders <span id="ins-badge"></span></h2><div id="ins-body"></div></div>
+  <div class="card"><h2>Copytrade <span class="badge">PAPEL</span> <span id="ct-badge"></span></h2><div id="ct-body"></div></div>
+  <div class="card"><h2>Cerebro <span id="br-badge"></span></h2><div id="br-body"></div></div>
+ </section>
+ <section id="director" class="card c12" aria-label="Director"><h2>Director <span id="dir-badge"></span><span class="sp"></span><span id="dir-mode" class="small"></span></h2><div id="dir-body"></div></section>
+ <section id="hl" class="card c12" aria-label="Hyperliquid"><h2>Hyperliquid (Keel, papel) <span id="hl-badge"></span></h2><div id="hl-body"></div></section>
+ <section id="cex" class="c12" aria-label="Exchanges centralizados"><div id="cex-body" class="cexgrid"></div></section>
+ <section id="activity" class="card c12" aria-label="Actividad"><h2>Actividad <span id="act-badge"></span></h2><div id="act-filters" class="filters" role="group" aria-label="Tipo"></div><div id="act-body" class="feed"></div></section>
+ <section id="controls" class="card c12" aria-label="Controles"><details><summary>Controles</summary><div id="ctl-body" style="margin-top:10px"></div></details></section>
+ <footer id="footer" class="c12"></footer>
+</main>
+<div id="tip" role="status"></div><div id="toast" role="status"></div>
+<script>
+'use strict';
+const CSRF = '{{csrf}}', POLL_MS = 5000, RAMP = ['#86b6ef','#6da7ec','#5598e7','#3987e5','#2a78d6','#256abf','#1c5cab'];
+const EXS = ['solana','binance','coinbase'], KINDS = ['todo','trade','risk','scam','error','scan','signal','skip','news'];
+const ST = {range:'24h', eqTable:false, dailyTable:false, kind:'todo'};
+let last = null, eqScale = null;
+const $ = id => document.getElementById(id);
+
+/* ---- safe HTML: every interpolated value is escaped unless it is a Safe produced by h`` ---- */
+class Safe { constructor(s){ this.s = s; } }
+const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const one = v => v instanceof Safe ? v.s : Array.isArray(v) ? v.map(one).join('') : esc(v);
+const h = (p, ...v) => new Safe(p.reduce((a, s, i) => a + s + (i < v.length ? one(v[i]) : ''), ''));
+const set = (id, s) => { $(id).innerHTML = one(s); };
+const safeUrl = u => (typeof u === 'string' && /^https?:\/\//i.test(u)) ? u : null;
+
+/* ---- formatting (all times come from the server, never Date.now()) ---- */
+const isNum = x => typeof x === 'number' && isFinite(x);
+const num = (x, d = 2) => isNum(x) ? x.toLocaleString('es-ES', {minimumFractionDigits: d, maximumFractionDigits: d}) : '—';
+const usd = (x, d = 2) => isNum(x) ? num(x, d) + ' $' : '—';
+const sgn = (x, d = 2, suf = '') => isNum(x) ? (x > 0 ? '+' : '') + num(x, d) + suf : '—';
+const pct = (x, d = 2) => sgn(x, d, ' %');
+const price = x => { if (!isNum(x)) return '—'; const a = Math.abs(x); return num(x, a >= 1000 ? 2 : a >= 1 ? 4 : Math.min(10, 2 - Math.floor(Math.log10(a || 1)))); };
+const dateOf = t => isNum(t) ? new Date(t * 1000) : (typeof t === 'string' && t) ? new Date(t) : null;
+const fmtT = (t, o) => { const d = dateOf(t); return d && !isNaN(d) ? d.toLocaleString('es-ES', o) : '—'; };
+const hms = t => fmtT(t, {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+const hm = t => fmtT(t, {hour: '2-digit', minute: '2-digit'});
+const dhm = t => fmtT(t, {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
+const ageTxt = s => !isNum(s) ? '—' : s < 60 ? Math.round(s) + ' s' : s < 3600 ? Math.round(s / 60) + ' min' : s < 86400 ? num(s / 3600, 1) + ' h' : num(s / 86400, 1) + ' d';
+const anyNum = v => Number.isInteger(v) ? num(v, 0) : num(v, 3); // integers without decimals, floats with 3
+const pol = x => isNum(x) ? (x > 0 ? 'pos' : x < 0 ? 'neg' : '') : '';
+const arrow = x => isNum(x) ? (x > 0 ? '▲ ' : x < 0 ? '▼ ' : '') : '';
+const cut = (s, n) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+
+/* ---- section state: never a number without its badge ---- */
+const ok = sec => !!(sec && sec.available);
+const fresh = sec => ok(sec) && sec.fresh !== false;
+const badge = sec => !ok(sec) ? h`<span class="badge warn" title="${sec && sec.error || 'fichero ausente'}">⚠ sin datos</span>`
+  : sec.fresh === false ? h`<span class="badge warn">⏱ ${isNum(sec.ts) ? 'obsoleto desde ' + hm(sec.ts) : 'sin marca de tiempo'}</span>` : h``;
+const HEALTH = {ok: ['●', 'good'], arrancando: ['◐', 'warn'], 'caído': ['✖', 'crit'], parado: ['■', '']};
+const chip = (name, state, extra) => { const [ic, cls] = HEALTH[state] || ['?', 'warn']; return h`<span class="chip ${cls}"><span class="ic">${ic}</span>${name ? name + ' · ' : ''}${state || 'desconocido'}${extra || ''}</span>`; };
+const list = (sec, ...keys) => { if (!ok(sec)) return []; for (const k of keys) if (Array.isArray(sec[k])) return sec[k]; return []; };
+
+/* ---- shared tooltip ---- */
+const tip = $('tip');
+function showTip(x, y, s) { tip.innerHTML = one(s); tip.style.display = 'block'; const w = tip.offsetWidth, hh = tip.offsetHeight; tip.style.left = Math.max(4, Math.min(innerWidth - w - 4, x + 14)) + 'px'; tip.style.top = Math.max(4, y - hh - 12) + 'px'; }
+const hideTip = () => { tip.style.display = 'none'; };
+
+/* ---- chart helpers (inline SVG) ---- */
+function ticks(lo, hi, n) { // nice steps (1/2/5 x 10^k), the largest one that still gives at least n-1 ticks inside [lo, hi]
+  const span = (hi - lo) || Math.abs(hi) || 1, k0 = Math.floor(Math.log10(span)), mk = step => { const t = []; for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) t.push(+v.toFixed(10)); return t; };
+  let fb = null; for (let k = k0 + 1; k >= k0 - 2; k--) for (const f of [5, 2, 1]) { const t = mk(f * Math.pow(10, k)); if (t.length >= n - 1 && t.length <= n + 1) return t; if (t.length >= 2 && (!fb || t.length < fb.length)) fb = t; } return fb || mk(span / (n - 1)); }
+function timeTicks(t0, t1) { const H = 3600e3, steps = [H, 2 * H, 3 * H, 6 * H, 12 * H, 24 * H, 48 * H]; const step = steps.find(s => (t1 - t0) / s <= 6) || 96 * H; const off = new Date(t0).getTimezoneOffset() * 60e3, out = []; for (let v = Math.ceil((t0 - off) / step) * step + off; v <= t1; v += step) out.push({t: v, label: step >= 24 * H ? fmtT(v / 1000, {day: '2-digit', month: '2-digit'}) : hm(v / 1000)}); return out; }
+const dataEnd = (x, y0, y1, w) => { // bar from baseline y0 to y1, 4px rounded data end, square at the baseline
+  const hgt = Math.abs(y0 - y1), r = Math.min(4, w / 2, hgt); if (hgt < 0.5) return `M${x},${y0}h${w}v-0.5h-${w}Z`;
+  const up = y1 < y0, s = up ? 1 : -1, yc = y1 + s * r; return `M${x},${y0}V${yc}Q${x},${y1} ${x + r},${y1}H${x + w - r}Q${x + w},${y1} ${x + w},${yc}V${y0}Z`; };
+
+function lineChart(pts, W) { // pts: [[ms, value]] single series
+  const H = 240, m = {l: 54, r: 12, t: 12, b: 26}, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  if (pts.length < 2) { eqScale = null; return h`<div class="empty">sin suficientes puntos</div>`; }
+  const ys = pts.map(p => p[1]), lo0 = Math.min(...ys), hi0 = Math.max(...ys), pad = (hi0 - lo0 || Math.abs(hi0) * .01 || 1) * .08, lo = lo0 - pad, hi = hi0 + pad;
+  const t0 = pts[0][0], t1 = pts[pts.length - 1][0] || t0 + 1, X = t => m.l + (t - t0) / (t1 - t0 || 1) * pw, Y = v => m.t + (hi - v) / (hi - lo) * ph;
+  eqScale = {pts, X, Y, W, m};
+  const d = pts.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join('');
+  const yt = ticks(lo, hi, 4).filter(v => v >= lo && v <= hi), xt = timeTicks(t0, t1), dec = yt.length > 1 && yt[1] - yt[0] >= 1 ? 0 : 2;
+  return h`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Curva de patrimonio, ${pts.length} puntos, de ${usd(pts[0][1])} a ${usd(pts[pts.length - 1][1])}">
+   ${yt.map(v => h`<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="#2c2c2a" stroke-width="1"/><text x="${m.l - 6}" y="${(Y(v) + 4).toFixed(1)}" text-anchor="end">${num(v, dec)}</text>`)}
+   ${xt.map(x => h`<text x="${X(x.t).toFixed(1)}" y="${H - 8}" text-anchor="middle">${x.label}</text>`)}
+   <path d="${d}L${X(t1).toFixed(1)},${m.t + ph}L${m.l},${m.t + ph}Z" fill="#3987e5" fill-opacity=".08"/>
+   <path d="${d}" fill="none" stroke="#3987e5" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+   <line id="eq-x" x1="0" x2="0" y1="${m.t}" y2="${m.t + ph}" stroke="#898781" stroke-width="1" visibility="hidden"/>
+   <circle id="eq-dot" r="4" fill="#3987e5" stroke="#1a1a19" stroke-width="2" visibility="hidden"/>
+   <rect id="eq-hit" x="${m.l}" y="${m.t}" width="${pw}" height="${ph}" fill="transparent"/></svg>`;
+}
+function barChart(days, W) { // 14 daily PnL bars, polarity blue/red, gray baseline
+  const H = 190, n = days.length, vals = days.map(d => isNum(d.pnl) ? d.pnl : 0), lo = Math.min(0, ...vals), hi = Math.max(0, ...vals), span = (hi - lo) || 1;
+  const m = {l: 44, r: 8, t: 18, b: lo < 0 ? 36 : 22}, pw = W - m.l - m.r, ph = H - m.t - m.b;
+  if (!n) return h`<div class="empty">sin operaciones cerradas en 14 días</div>`;
+  const Y = v => m.t + (hi - v) / span * ph, y0 = Y(0), slot = pw / n, bw = Math.min(24, slot - 2), best = vals.indexOf(Math.max(...vals)), worst = vals.indexOf(Math.min(...vals));
+  const yt = ticks(lo, hi, 3).filter(v => v >= lo && v <= hi), dec = yt.length > 1 && yt[1] - yt[0] >= 1 ? 0 : 1;
+  return h`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="PnL diario de los últimos ${n} días">
+   ${yt.map(v => h`<line x1="${m.l}" x2="${W - m.r}" y1="${Y(v).toFixed(1)}" y2="${Y(v).toFixed(1)}" stroke="#2c2c2a"/><text x="${m.l - 6}" y="${(Y(v) + 4).toFixed(1)}" text-anchor="end">${num(v, dec)}</text>`)}
+   <line x1="${m.l}" x2="${W - m.r}" y1="${y0.toFixed(1)}" y2="${y0.toFixed(1)}" stroke="#383835" stroke-width="1"/>
+   ${days.map((d, i) => { const v = vals[i], x = m.l + i * slot + (slot - bw) / 2, y1 = Y(v), lab = (i === best && v > 0) || (i === worst && v < 0);
+     return h`<g tabindex="0" class="bar" data-i="${i}" aria-label="${d.day}: ${sgn(v)} $, ${d.n ?? 0} ventas"><rect x="${x - 1}" y="${m.t}" width="${bw + 2}" height="${ph}" fill="transparent"/>
+      <path d="${dataEnd(x, y0, y1, bw)}" fill="${v < 0 ? '#e66767' : '#3987e5'}"/>
+      ${lab ? h`<text class="lbl" x="${(x + bw / 2).toFixed(1)}" y="${(v >= 0 ? y1 - 4 : y1 + 12).toFixed(1)}" text-anchor="middle">${sgn(v, Math.abs(v) >= 100 ? 0 : 2)}</text>` : ''}
+      <text x="${(x + bw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle">${String(d.day || '').slice(8, 10)}</text></g>`; })}</svg>`;
+}
+function funnelChart(rows, W) { // horizontal ordinal bars, ramp by rank
+  const rh = 22, lw = Math.min(170, W * .38), m = {l: lw + 8, r: 44}, pw = Math.max(40, W - m.l - m.r), H = rows.length * rh + 4, mx = Math.max(1, ...rows.map(r => r.n || 0));
+  if (!rows.length) return h`<div class="empty">sin candidatos en la ventana</div>`;
+  return h`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Embudo de candidatos por motivo de veto">
+   ${rows.map((r, i) => { const w = Math.max(4, (r.n || 0) / mx * pw), y = i * rh + 4; return h`<g><text x="${lw}" y="${y + 11}" text-anchor="end" fill="#c3c2b7">${cut(r.reason, 26)}</text>
+     <path fill="${RAMP[Math.min(i, RAMP.length - 1)]}" d="M${m.l},${y}h${(w - 4).toFixed(1)}a4,4 0 0 1 4,4v4a4,4 0 0 1 -4,4h-${(w - 4).toFixed(1)}Z"><title>${r.reason}: ${num(r.n, 0)}</title></path>
+     <text x="${(m.l + w + 6).toFixed(1)}" y="${y + 11}" fill="#f0efec">${num(r.n, 0)}</text></g>`; })}</svg>`;
+}
+function spark(pts, W) { const H = 40; if (!pts || pts.length < 2) return h`<div class="empty small">sin curva 24 h</div>`;
+  const ys = pts.map(p => p[1]), lo = Math.min(...ys), hi = Math.max(...ys), t0 = pts[0][0], t1 = pts[pts.length - 1][0] || t0 + 1;
+  const d = pts.map((p, i) => (i ? 'L' : 'M') + ((p[0] - t0) / (t1 - t0 || 1) * (W - 4) + 2).toFixed(1) + ',' + (hi === lo ? H / 2 : 4 + (hi - p[1]) / (hi - lo) * (H - 8)).toFixed(1)).join('');
+  return h`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Patrimonio 24 h: de ${usd(pts[0][1])} a ${usd(pts[pts.length - 1][1])}"><path d="${d}" fill="none" stroke="#3987e5" stroke-width="2" stroke-linejoin="round"/></svg>`; }
+const widthOf = id => Math.max(240, $(id).clientWidth || 600);
+
+/* ---- render: one entry point, one function per section ---- */
+function render(ov) {
+  renderTop(ov); renderKpis(ov); renderOperator(ov); renderEquity(ov); renderDaily(ov); renderPositions(ov); renderScan(ov); renderTrades(ov);
+  renderIntel(ov); renderDirector(ov); renderHL(ov); renderCEX(ov); renderActivity(ov); renderControls(ov); renderFooter(ov);
+}
+function renderTop(ov) {
+  const meta = ov.meta || {}, hs = ov.health || {}, H = hs.exchanges || hs, sol = ov.solana;
+  $('livedot').className = 'dot' + (fresh(sol) ? ' on' : ''); $('upd').textContent = hms(meta.now);
+  const chips = [];
+  for (const ex of EXS) { const e = H[ex]; if (!e || !ok(hs) && !e.health) continue; const fl = (e.killed ? ' · KILL' : '') + (e.stopped ? ' · STOP' : '') + (e.paused ? ' · ⏸' : ''); chips.push(chip(ex, e.health, fl)); }
+  if (ok(hs)) { chips.push(chip('insider', hs.insider_pid ? 'ok' : 'caído')); chips.push(chip('dashboard', hs.dashboard_pid ? 'ok' : 'caído')); }
+  else chips.push(badge(hs));
+  if (meta.stop_all) chips.push(h`<span class="chip crit"><span class="ic">⛔</span>STOP global</span>`);
+  if (sol && ok(sol) && sol.halted) chips.push(h`<span class="chip crit"><span class="ic">⛔</span>solana KILL/HALT</span>`);
+  set('chips', chips);
+  const u = safeUrl(meta.tunnel_url); set('tunnel', u ? h`<a href="${u}" rel="noopener">túnel ↗</a>` : h`<span class="mute">sin túnel</span>`);
+}
+function tile(label, value, sub, cls, bd) { return h`<div class="tile"><div class="l">${label}</div><div class="v ${cls || ''}">${value}</div><div class="s">${sub}</div>${bd ? h`<div>${bd}</div>` : ''}</div>`; }
+function renderKpis(ov) {
+  const s = ov.solana || {}, lim = ok(s.limits) ? s.limits : {}, k = s.kpi_30d, sc = s.scan, pf = sc && (sc.prefilter || sc), S = ok(s);
+  const w = S && s.wallet, posL = S ? (s.positions || []) : [], lat = posL.reduce((a, p) => a + (isNum(p.pnl) ? p.pnl : 0), 0);
+  const mode = S ? (s.mode === 'live' ? h`<span class="badge real">REAL</span>` : h`<span class="badge">PAPEL</span>`) : '';
+  const risk = !S ? ['—', ''] : s.halted ? ['⛔ KILL/HALT', 'neg'] : s.paused ? ['⏸ pausa', ''] : ['✅ operando', ''];
+  set('kpis', [
+    tile(h`Patrimonio Solana ${mode}`, S ? usd(s.equity) : '—', w ? h`wallet ${num(w.sol, 3)} SOL ≈ ${usd(w.usd)} <span class="mute">(${hm(w.t)})</span>` : h`<span class="mute">${S ? 'sin wallet (papel)' : ''}</span>`, '', badge(s)),
+    tile('Hoy', S ? arrow(s.day_pnl_usd) + sgn(s.day_pnl_usd) + ' $' : '—', S ? pct(s.day_pnl_pct) : '', S ? pol(s.day_pnl_usd) : '', badge(s)),
+    tile('Posiciones abiertas', S ? `${posL.length} / ${isNum(lim.max_positions) ? lim.max_positions : '—'}` : '—', S ? h`PnL latente <span class="${pol(lat)}">${sgn(lat)} $</span>` : '', '', badge(s)),
+    tile('30 días', ok(k) ? 'PF ' + (isNum(k.profit_factor) ? num(k.profit_factor) : '—') : '—', ok(k) ? h`acierto ${isNum(k.win_rate) ? num(k.win_rate * (k.win_rate <= 1 ? 100 : 1), 0) + ' %' : '—'} · ${k.n ?? 0} ventas · ${sgn(k.expectancy, 3)} $/op` : '', '', badge(k)),
+    tile('Último escaneo', ok(sc) ? 'hace ' + ageTxt(sc.age_s) : '—', ok(sc) && pf && isNum(pf.ok) ? h`${num(pf.secs, 0)} s · rugcheck ${pf.rc_fetched ?? '—'}/${pf.rc_needed ?? '—'} · ok ${pf.ok}/${pf.total}` : '', '', badge(sc)),
+    tile('Riesgo', risk[0], S ? h`stop diario −${isNum(lim.daily_max_drawdown_pct) ? num(lim.daily_max_drawdown_pct * 100, 1) : '—'} % · ${lim.exit_mode === 'trail' ? h`stop −${isNum(lim.hard_stop_pct) ? num(lim.hard_stop_pct, 0) : '—'} % neto · trail ${isNum(lim.trail_pct_tt) ? num(lim.trail_pct_tt, 0) : '—'} %` : h`stop −${isNum(lim.stop_pct) ? num(lim.stop_pct * 100, 0) : '—'} %`}` : '', risk[1], badge(s)),
+  ]);
+}
+function renderOperator(ov) {
+  const o = ov.operator; set('op-badge', badge(o));
+  if (!ok(o)) { set('op-worst', ''); set('op-body', h`<div class="empty">sin operator_state.json (operador.py corre cada hora desde run_forever.sh; manual: python3 operador.py --once)</div>`); return; }
+  const W = {ok: ['✅', 'good', 'sin incidencias'], warn: ['⚠', 'warn', 'avisos'], crit: ['⛔', 'crit', 'incidencia grave']}[o.worst] || ['●', '', ''];
+  set('op-worst', h`<span class="chip ${W[1]}"><span class="ic">${W[0]}</span>${W[2]} · revisión ${hm(o.ts)}</span>`);
+  const LV = {crit: 'crit', warn: 'warn', info: 'blue', ok: 'good'}, sm = o.summary || {};
+  set('op-body', h`<div class="cols3">
+   <div><div class="small mute" style="margin-bottom:4px">hallazgos de la última revisión</div>${(o.findings || []).length ? h`<div class="feed" style="max-height:220px">${o.findings.map(f => h`<div class="row"><span class="badge ${LV[f.level] || ''}">${f.level}</span><span class="m">${f.msg}</span></div>`)}</div>` : h`<div class="empty">ninguno</div>`}</div>
+   <div><div class="small mute" style="margin-bottom:4px">acciones tomadas (solo las seguras: rent de ATAs, procesos colgados, Director, logs)</div>${(o.actions || []).length ? h`<div class="feed" style="max-height:220px">${o.actions.map(a => h`<div class="row"><span class="badge ${a.dry_run ? 'warn' : 'blue'}">${a.action}</span><span class="m">${a.detail}</span></div>`)}</div>` : h`<div class="empty">ninguna</div>`}
+    <div class="small mute" style="margin-top:6px">informe diario: ${o.last_daily || '—'} · último cierre de ATAs: ${isNum(o.last_ata) ? dhm(o.last_ata) : 'nunca'}</div></div>
+   <div><div class="small mute" style="margin-bottom:4px">resumen</div><div class="kv small">${['legs', 'scan', 'funnel', 'director', 'brain', 'copytrade', 'hl'].filter(k => sm[k]).map(k => h`<span class="k">${k}</span><span>${Array.isArray(sm[k]) ? sm[k].join(' · ') : String(sm[k])}</span>`)}</div>
+    ${(o.alerts || []).length ? h`<div class="small mute" style="margin:8px 0 4px">alertas recientes</div><div class="feed" style="max-height:140px">${o.alerts.map(a => h`<div class="row"><span class="t">${dhm(a.t)}</span><span class="badge ${LV[a.level] || ''}">${a.level}</span><span class="m">${a.msg}</span></div>`)}</div>` : ''}</div></div>`);
+}
+function renderEquity(ov) {
+  const ec = ov.solana && ov.solana.equity_curve; set('eq-badge', badge(ec));
+  document.querySelectorAll('[data-range]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.range === ST.range)));
+  document.querySelector('[data-toggle=eqTable]').setAttribute('aria-pressed', String(ST.eqTable));
+  if (!ok(ec)) { set('eq-sum', ''); set('eq-body', h`<div class="empty">sin curva de patrimonio</div>`); eqScale = null; return; }
+  const pts = (ST.range === '24h' ? ec.points_24h : ec.points_7d) || [];
+  set('eq-sum', h`último ${usd(ec.last)} · 24 h mín ${usd(ec.min_24h)} / máx ${usd(ec.max_24h)} · ${ST.range === '7d' && isNum(ec.from_7d) ? h`desde ${dhm(ec.from_7d)} · ` : ''}${ec.n_rows_read ?? '—'} filas${ec.truncated ? ' (cola del fichero)' : ''}`);
+  if (ST.eqTable) { set('eq-body', h`<div class="scroll"><table><thead><tr><th>Hora</th><th class="n">Patrimonio</th></tr></thead><tbody>${pts.slice(-20).reverse().map(p => h`<tr><td>${dhm(p[0] / 1000)}</td><td class="n">${usd(p[1])}</td></tr>`)}</tbody></table></div>`); eqScale = null; }
+  else set('eq-body', lineChart(pts, widthOf('eq-body')));
+}
+function renderDaily(ov) {
+  const dp = ov.solana && ov.solana.daily_pnl; set('dp-badge', badge(dp)); document.querySelector('[data-toggle=dailyTable]').setAttribute('aria-pressed', String(ST.dailyTable));
+  if (!ok(dp)) { set('dp-sum', ''); set('dp-body', h`<div class="empty">sin histórico de operaciones</div>`); return; }
+  const days = list(dp, 'days', 'rows', 'items'); set('dp-sum', h`total 14 d <b class="${pol(dp.total_14d)}">${sgn(dp.total_14d)} $</b> · ${days.reduce((a, d) => a + (d.n || 0), 0)} ventas`);
+  if (ST.dailyTable) set('dp-body', h`<div class="scroll"><table><thead><tr><th>Día</th><th class="n">PnL</th><th class="n">Ventas</th><th class="n">Ganadas</th></tr></thead><tbody>${days.slice().reverse().map(d => h`<tr><td>${d.day}</td><td class="n ${pol(d.pnl)}">${sgn(d.pnl)} $</td><td class="n">${d.n ?? 0}</td><td class="n">${d.wins ?? 0}</td></tr>`)}</tbody></table></div>`);
+  else { set('dp-body', barChart(days, widthOf('dp-body'))); $('dp-body').dataset.days = JSON.stringify(days); }
+}
+function flags(p) { const f = []; if (p.partial) f.push(h`<span class="badge">½TP</span>`); if (p.pump) f.push(h`<span class="badge blue">PUMP</span>`); if (p.trailing) f.push(h`<span class="badge good">trailing</span>`);
+  if (p.sellfail > 0) f.push(h`<span class="badge crit">sellfail ${p.sellfail}</span>`); if (p.noroute > 0) f.push(h`<span class="badge warn">noroute ${p.noroute}</span>`); return f; }
+function renderPositions(ov) {
+  const s = ov.solana; set('pos-badge', badge(s)); if (!ok(s)) { set('pos-body', h`<div class="empty">sin estado del bot</div>`); return; }
+  const P = s.positions || []; if (!P.length) { set('pos-body', h`<div class="empty">Sin posiciones — todo en efectivo (${usd(s.cash)})</div>`); return; }
+  set('pos-body', h`<table><thead><tr><th>Símbolo</th><th>Edad</th><th class="n">Entrada</th><th class="n">Marca</th><th class="n">PnL</th><th>Stop / trailing</th><th class="n">Score</th><th>Banderas</th><th></th></tr></thead><tbody>
+   ${P.map(p => { const span = isNum(p.best) && isNum(p.stop) && p.best > p.stop ? p.best - p.stop : null, fill = span && isNum(p.mark) ? Math.max(0, Math.min(100, (p.mark - p.stop) / span * 100)) : null, tl = span && isNum(p.trail_level) ? Math.max(0, Math.min(100, (p.trail_level - p.stop) / span * 100)) : null;
+     return h`<tr><td><b>${p.sym}</b><div class="mute small nowrap">${p.mint_short || ''}${p.strategy ? ' · ' + p.strategy : ''}</div></td><td class="nowrap">${ageTxt((p.age_min || 0) * 60)}</td><td class="n">${price(p.entry)}</td><td class="n">${price(p.mark)}</td>
+      <td class="n ${pol(p.pnl)}">${sgn(p.pnl, 3)} $<div class="small">${pct(p.pnl_pct)}</div></td>
+      <td class="nowrap">${fill !== null ? h`<span class="pbar" title="stop → máximo"><b style="width:${fill.toFixed(0)}%"></b>${tl !== null ? h`<i style="left:${tl.toFixed(0)}%"></i>` : ''}</span>` : ''}<span class="small">stop ${pct(p.dist_stop_pct, 1)}${p.trailing ? h` · trail ${pct(p.dist_trail_pct, 1)}` : ''}</span></td>
+      <td class="n">${isNum(p.score) ? num(p.score, 0) : '—'}</td><td>${flags(p)}</td>
+      <td><button class="sm danger" data-act="close" data-ex="solana" data-sym="${p.mint || p.sym}" data-label="${p.sym}">Cerrar</button></td></tr>`; })}</tbody></table>`);
+}
+function renderScan(ov) {
+  const s = ov.solana || {}, sc = s.scan, fu = s.funnel, pf = ok(sc) ? (sc.prefilter || sc) : null, ln = ok(sc) ? (sc.last_scan || sc.scan || {}) : {}, bb = ok(sc) ? sc.last_buy_block : null;
+  set('scan-badge', h`${badge(sc)} ${badge(fu)}`);
+  const rows = ok(fu) ? (fu.by_fail || []).map(r => ({reason: r.reason, n: r.n})) : []; if (ok(fu) && isNum(fu.passed)) rows.push({reason: '✔ pasan el filtro', n: fu.passed});
+  set('scan-body', h`<div class="cols3">
+   <div><div class="kv">
+    <span class="k">prefiltro</span><span>${pf && isNum(pf.ok) ? h`<b>${pf.ok}/${pf.total}</b> → eval ${pf.eval} <span class="mute">(${pf.skipped_hardfail ?? 0} vetados recientes)</span>` : pf && pf.prefilter_text ? h`<span class="small">${pf.prefilter_text}</span> <span class="badge warn">⚠ ${pf.parse_error || 'sin parsear'}</span>` : '—'}</span>
+    <span class="k">rugcheck</span><span>${pf && isNum(pf.rc_fetched) ? h`${pf.rc_fetched}/${pf.rc_needed} <span class="mute">(${pf.rc_past_budget ?? 0} fuera de presupuesto) en ${num(pf.secs, 0)} s</span>` : '—'}</span>
+    <span class="k">edad</span><span>${ok(sc) ? h`hace ${ageTxt(sc.age_s)} <span class="mute">(${hm(pf && (pf.prefilter_ts ?? pf.ts))})</span>` : '—'}</span>
+    <span class="k">último SCAN</span><span class="small">${ln.text ? h`${ln.text} <span class="mute">(${hm(ln.ts)})</span>` : '—'}</span>
+    <span class="k">bloqueo compra real</span><span class="small">${bb && bb.text ? h`<span class="badge real">REAL</span> ${bb.text} <span class="mute">(${hm(bb.ts)})</span>` : h`<span class="mute">ninguno en la cola del log</span>`}</span>
+   </div></div>
+   <div><div class="small mute" style="margin-bottom:4px">${ok(fu) ? h`${fu.rows ?? 0} candidatos · ${hm(fu.window_from)} → ${hm(fu.window_to)}` : 'embudo sin datos'}</div><div id="funnel" class="chart"></div></div>
+   <div><div class="small mute" style="margin-bottom:4px">últimos que pasan</div>${ok(fu) && (fu.last_passed || []).length ? h`<table><tbody>${fu.last_passed.map(r => h`<tr><td class="mute">${hm(r.ts)}</td><td><b>${r.sym}</b></td><td class="n">${isNum(r.score) ? num(r.score, 0) : ''}</td></tr>`)}</tbody></table>` : h`<div class="empty">ninguno</div>`}
+    ${ok(fu) && (fu.by_src || []).length ? h`<div class="small mute" style="margin-top:8px">por origen: ${fu.by_src.map(r => h`${r.src} ${num(r.n, 0)}`).map((x, i) => i ? h` · ${x}` : x)}</div>` : ''}</div></div>`);
+  set('funnel', funnelChart(rows, widthOf('funnel')));
+}
+function renderTrades(ov) {
+  const t = ov.solana && ov.solana.trades; set('tr-badge', h`${badge(t)}${ov.solana && isNum(ov.solana.real_trades_24h) ? h` <span class="badge real">${ov.solana.real_trades_24h} reales en 24 h</span>` : ''}`);
+  const rows = list(t, 'rows', 'items'); if (!ok(t)) { set('tr-body', h`<div class="empty">sin fichero de operaciones</div>`); return; }
+  if (!rows.length) { set('tr-body', h`<div class="empty">sin operaciones registradas</div>`); return; }
+  set('tr-body', h`<div class="feed">${rows.slice(0, 60).map(r => { const buy = String(r.side).toUpperCase() === 'BUY'; return h`<div class="row"><span class="t">${dhm(r.time)}</span><span class="m"><b>${r.sym}</b> ${buy ? 'COMPRA' : 'VENTA'} @ ${price(isNum(r.price) ? r.price : parseFloat(r.price))}${r.is_real ? h` <span class="badge real">REAL</span>` : ''}
+    ${!buy ? h` <span class="${pol(r.pnl)}">${sgn(r.pnl, 3)} $</span>` : ''} <span class="mute small">${r.reason || ''}</span></span></div>`; })}</div>`);
+}
+function renderIntel(ov) {
+  const ins = ov.insider, ct = ov.copytrade, br = ov.solana && ov.solana.brain; set('ins-badge', badge(ins)); set('ct-badge', badge(ct)); set('br-badge', badge(br));
+  set('ins-body', !ok(ins) ? h`<div class="empty">sin insider_status.json</div>` : h`<div class="kv"><span class="k">carteras</span><span><b>${ins.tracked ?? '—'}</b> seguidas · ${ins.live_ranked ?? '—'} con actividad</span><span class="k">ciclo</span><span>${isNum(ins.cycle_s) ? num(ins.cycle_s, 0) + ' s' : '—'}</span></div>
+   <div class="small mute" style="margin-top:8px">convergencia (top)</div>${(ins.conv || []).length ? h`<table><tbody>${ins.conv.map(c => h`<tr><td><code>${c.mint_short}</code></td><td class="n">score ${num(c.score, 1)}</td><td class="n">${c.n ?? 0} w · ${c.elite ?? 0} élite</td></tr>`)}</tbody></table>` : h`<div class="empty">sin convergencia</div>`}
+   <div class="small mute" style="margin-top:8px">alertas recientes</div>${(ins.alerts || []).length ? h`<div class="feed">${ins.alerts.slice(0, 6).map(a => h`<div class="row"><span class="t">${hm(a.t)}</span><span class="m"><code>${a.mint_short}</code> élite ${a.elite ?? 0} · ${a.n ?? 0} w · score ${num(a.score, 1)}</span></div>`)}</div>` : h`<div class="empty">ninguna</div>`}`);
+  set('ct-body', !ok(ct) ? h`<div class="empty">sin estado de copytrade</div>` : h`<div class="hero ${pol(ct.pnl)}">${sgn(ct.pnl)} $</div><div class="kv"><span class="k">cerradas</span><span>${ct.closed ?? 0} · acierto ${isNum(ct.win_rate) ? num(ct.win_rate * (ct.win_rate <= 1 ? 100 : 1), 0) + ' %' : '—'} (${ct.wins ?? 0} ganadas)</span>
+   <span class="k">abiertas</span><span>${(ct.open || []).length ? ct.open.map((o, i) => h`${i ? ' · ' : ''}<b>${o.sym}</b> @ ${price(o.e)}${o.rug_n ? h` <span class="badge warn">rug ${o.rug_n}</span>` : ''}`) : 'ninguna'}</span></div>
+   <div class="small mute" style="margin-top:8px">últimas</div><div class="feed" style="max-height:160px">${(ct.recent || []).slice(0, 8).map(r => h`<div class="row"><span class="t">${dhm(r.time)}</span><span class="m"><b>${r.symbol}</b> ${r.side} ${isNum(r.pnl) && String(r.side).toUpperCase() !== 'BUY' ? h`<span class="${pol(r.pnl)}">${sgn(r.pnl, 3)} $</span>` : ''} <span class="mute">${r.reason || ''}</span></span></div>`)}</div>`);
+  const oos = ok(br) && br.oos && typeof br.oos === 'object' ? br.oos : null;
+  set('br-body', !ok(br) ? h`<div class="empty">sin estado del cerebro</div>` : h`<div class="kv"><span class="k">modo</span><span>${br.active ? h`<span class="badge good">● activo</span>` : h`<span class="badge">○ sombra</span>`} · base ${isNum(br.base) ? num(br.base) : '—'}</span>
+   <span class="k">etiquetados</span><span>${br.n_labelled ?? '—'} de ${br.n ?? '—'}</span><span class="k">actualizado</span><span>${dhm(br.updated)}</span>
+   <span class="k">media gan./pérd.</span><span><span class="pos">${isNum(br.avg_win) ? '+' + num(br.avg_win * 100, 1) + ' %' : '—'}</span> / <span class="neg">${isNum(br.avg_loss) ? '−' + num(Math.abs(br.avg_loss) * 100, 1) + ' %' : '—'}</span></span>
+   ${oos ? h`<span class="k">OOS</span><span class="small">${Object.entries(oos).slice(0, 8).map(([k, v], i) => h`${i ? ' · ' : ''}${k} ${isNum(v) ? anyNum(v) : typeof v === 'object' ? JSON.stringify(v).slice(0, 60) : String(v)}`)}</span>` : ''}</div>
+   <div class="small mute" style="margin-top:8px">decisiones recientes</div>${(br.decisions || []).length ? h`<div class="feed" style="max-height:160px">${br.decisions.slice(0, 8).map(d => h`<div class="row"><span class="t">${hm(d.t ?? d.ts)}</span><span class="m">${typeof d === 'string' ? d : h`<b>${d.sym ?? ''}</b> ${'pass' in d ? (d.pass ? h`<span class="badge good">✔ pasa</span>` : h`<span class="badge warn">✖ veto</span>`) : (d.decision ?? '')} ${isNum(d.score) ? 'score ' + num(d.score, 0) : ''} ${isNum(d.p) ? 'p=' + num(d.p, 2) : ''} ${isNum(d.ev_pct) ? 'EV ' + sgn(d.ev_pct, 1) + ' %' : ''} <span class="mute">${d.fail || d.why || d.reason || ''}${d.narr ? ' · ' + d.narr : ''}</span>`}</span></div>`)}</div>` : h`<div class="empty">ninguna en el estado</div>`}`);
+}
+function renderDirector(ov) {
+  const d = ov.director; set('dir-badge', badge(d));
+  if (!ok(d)) { set('dir-mode', ''); set('dir-body', h`<div class="empty">sin director_state.json (el Director aún no ha corrido en esta máquina)</div>`); return; }
+  const e = d.evidence || {}, sp = d.size_policy || {}, ep = d.exit_profile || {}, P = d.plays || {}, PW = d.plays_why || {}, PE = e.plays || {};
+  set('dir-mode', d.shadow ? h`<span class="badge warn">○ sombra: calcula y registra, no manda</span>` : h`<span class="badge good">● manda (solo endurece)</span>`);
+  const playBadge = v => v === 'on' ? h`<span class="badge good">on</span>` : v === 'paper' ? h`<span class="badge">papel</span>` : h`<span class="badge crit">off</span>`;
+  const hours = d.windows || [], closed = []; for (let i = 0; i < 24; i++) if (!hours.includes(i)) closed.push(i);
+  set('dir-body', h`<div class="cols3">
+   <div class="kv"><span class="k">tamaño</span><span>${isNum(sp.target_usd) ? (sp.target_usd > 0 ? usd(sp.target_usd) : h`<span class="badge crit">0 $ · no operar</span>`) : '—'} <span class="mute small">${sp.why || ''}</span></span>
+    <span class="k">coste fijo</span><span>${isNum(e.fixed_cost_usd) ? usd(e.fixed_cost_usd, 3) : '—'} por operación ${isNum(sp.fixed_share) ? h`(${num(sp.fixed_share * 100, 2)} % de la posición)` : ''} · prob. rent perdido ${isNum(e.rent_lost_prob) ? num(e.rent_lost_prob * 100, 0) + ' %' : '—'}</span>
+    <span class="k">umbrales</span><span>score ≥ ${isNum(d.min_score_eff) ? num(d.min_score_eff, 0) : '—'} · EV ≥ ${isNum(d.ev_min_eff) ? num(d.ev_min_eff * 100, 2) + ' %' : '—'} · máx ${d.max_trades_day ?? '—'} op/día</span>
+    <span class="k">salida</span><span>stop −${isNum(ep.hard_stop_pct) ? num(ep.hard_stop_pct, 0) : '—'} % · trail ${isNum(ep.trail_pct) ? num(ep.trail_pct, 0) : '—'} % <span class="mute small">${ep.why || ''}</span></span>
+    <span class="k">horas</span><span>${hours.length}/24 permitidas${closed.length ? h` <span class="mute small">(cerradas: ${closed.join(', ')} h)</span>` : ''}${isNum(e.dataset_rows) ? h` <span class="mute small">· dataset ${num(e.dataset_rows, 0)} filas</span>` : ''}</span></div>
+   <div><div class="small mute" style="margin-bottom:4px">jugadas (evidencia 14 días, real + papel)</div><table><thead><tr><th>jugada</th><th>estado</th><th class="n">real n / PF / exp</th><th class="n">papel n / PF / exp</th></tr></thead><tbody>
+    ${Object.keys(P).map(k => { const v = PE[k] || {}; return h`<tr><td><b>${k}</b></td><td>${playBadge(P[k])}</td><td class="n small">${v.real_n ?? 0} / ${isNum(v.real_pf) ? num(v.real_pf) : '—'} / ${isNum(v.real_exp) ? pct(v.real_exp, 1) : '—'}</td><td class="n small">${v.paper_n ?? 0} / ${isNum(v.paper_pf) ? num(v.paper_pf) : '—'} / ${isNum(v.paper_exp) ? pct(v.paper_exp, 1) : '—'}</td></tr>`; })}</tbody></table>
+    <div class="small mute" style="margin-top:6px">${Object.keys(PW).map(k => h`<div>${k}: ${PW[k]}</div>`)}</div></div>
+   <div><div class="small mute" style="margin-bottom:4px">últimas decisiones</div>${(d.log || []).length ? h`<div class="feed" style="max-height:200px">${d.log.map(l => h`<div class="row"><span class="t">${dhm(l.t)}</span><span class="m">${l.shadow ? h`<span class="badge warn">sombra</span> ` : ''}${l.changes.length ? l.changes.map(c => h`<div><b>${c.key}</b>: ${typeof c.before === 'object' ? JSON.stringify(c.before) : String(c.before ?? '—')} → ${typeof c.after === 'object' ? JSON.stringify(c.after) : String(c.after ?? '—')}</div>`) : h`<span class="mute">sin cambios</span>`} <div class="mute small">${l.summary}</div></span></div>`)}</div>` : h`<div class="empty">sin registro</div>`}</div></div>`);
+}
+function renderHL(ov) {
+  const hl = ov.hl; set('hl-badge', badge(hl)); if (!ok(hl)) { set('hl-body', h`<div class="empty">sin hl_leg/hl_paper.json</div>`); return; }
+  const p = hl.paper || {}, ev = hl.evidence || {}, rk = hl.risk || {}, u = safeUrl(p.url), RS = {ok: ['✅', 'good'], normal: ['✅', 'good'], caution: ['⚠', 'warn'], warning: ['⚠', 'warn'], elevated: ['⚠', 'serious'], critical: ['⛔', 'crit'], stale: ['⏱', 'warn']};
+  const st = String(rk.status || 'desconocido').toLowerCase(), [ric, rcl] = RS[st] || ['●', ''], errs = Object.entries(hl.errors || {});
+  const evb = (lab, e) => e ? h`<div><span class="mute">${lab}:</span> Sharpe ${num(e.sharpe)} · retorno ${pct(e.return_pct, 1)} · DD máx ${num(e.max_dd_pct, 1)} %${isNum(e.profit_factor) ? ' · PF ' + num(e.profit_factor) : ''}${e.quarters_positive != null ? ' · trimestres + ' + e.quarters_positive : ''}</div>` : '';
+  set('hl-body', h`<div class="cols3"><div class="kv"><span class="k">paper run</span><span>${u ? h`<a href="${u}" rel="noopener">${p.deployment_id || 'enlace'} ↗</a>` : (p.deployment_id || '—')}</span>
+   <span class="k">estrategia</span><span>${p.strategy_name || '—'} <span class="mute">v${p.strategy_version ?? '—'}</span></span><span class="k">capital simulado</span><span>${usd(p.simulated_capital_usd, 0)}</span>
+   <span class="k">iniciado</span><span>${dhm(p.started)}</span>${p.schedule ? h`<span class="k">calendario</span><span>${typeof p.schedule === 'string' ? p.schedule : JSON.stringify(p.schedule)}</span>` : ''}
+   ${p.replaces ? h`<span class="k">sustituye</span><span class="small mute">${p.replaces.deployment_id || ''} · ${p.replaces.why || ''}</span>` : ''}</div>
+   <div><div class="small mute">expectativa (tal cual)</div><pre>${typeof p.expectation === 'string' ? p.expectation : JSON.stringify(p.expectation || '—', null, 1)}</pre>
+    ${(p.go_live_criteria || []).length ? h`<div class="small mute" style="margin-top:6px">criterios para operar en real</div><ul class="small" style="margin:2px 0;padding-left:18px">${p.go_live_criteria.map(c => h`<li>${c}</li>`)}</ul>` : ''}
+    <div class="small" style="margin-top:6px">${evb('OOS', ev.oos)}${evb('ventana completa', ev.full)}</div>${ev.honest_summary ? h`<pre style="margin-top:6px">${ev.honest_summary}</pre>` : ''}</div>
+   <div><div><span class="chip ${rcl}"><span class="ic">${ric}</span>riesgo Coinversa · ${st}</span> <span class="small mute">${dhm(rk.generated ?? rk.ts)}</span></div>
+    ${(rk.coins || []).length ? h`<table style="margin-top:6px"><thead><tr><th>Moneda</th><th>Banderas</th><th class="n">Tamaño</th></tr></thead><tbody>${rk.coins.slice(0, 12).map(c => h`<tr><td><b>${c.coin}</b></td><td class="small">${(c.flags_long || []).map(f => h`<span class="badge warn">L ${f}</span> `)}${(c.flags_short || []).map(f => h`<span class="badge warn">S ${f}</span> `)}${!(c.flags_long || []).length && !(c.flags_short || []).length ? h`<span class="mute">—</span>` : ''}</td><td class="n">×${num(c.size_mult, 2)}</td></tr>`)}</tbody></table>` : h`<div class="empty">sin monedas en el fichero de riesgo</div>`}
+    ${errs.length ? h`<div class="small" style="margin-top:6px">${errs.map(([k, v]) => h`<span class="badge warn">⚠ ${k}: ${v}</span> `)}</div>` : ''}${(hl.context_tail || []).length ? h`<div class="small mute" style="margin-top:6px">contexto: ${hl.context_tail.length} filas, última ${dhm(hl.context_tail[hl.context_tail.length - 1].ts ?? hl.context_tail[hl.context_tail.length - 1].time ?? hl.context_tail[hl.context_tail.length - 1].t)}</div>` : ''}</div></div>`);
+}
+function renderCEX(ov) {
+  const cx = ov.cex || {}, E = cx.exchanges || cx, hs = ov.health || {}, H = hs.exchanges || hs, cards = [];
+  for (const ex of ['binance', 'coinbase']) { const e = E[ex]; if (!e) continue; const he = H[ex] || {}, P = ok(e) ? (e.positions || []) : [];
+    cards.push(h`<div class="card"><h2>${ex} ${ok(e) ? (e.mode === 'live' ? h`<span class="badge real">REAL</span>` : h`<span class="badge">PAPEL</span>`) : ''} ${badge(e)}<span class="sp"></span>${he.health ? chip('proceso', he.health) : ''}</h2>
+     ${ok(e) ? h`<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:baseline"><span class="hero">${usd(e.equity)}</span><span class="${pol(e.day_pnl_pct)}">${arrow(e.day_pnl_pct)}${pct(e.day_pnl_pct)} hoy</span>
+      ${e.halted ? h`<span class="chip crit"><span class="ic">⛔</span>halt</span>` : ''}${e.paused ? h`<span class="chip warn"><span class="ic">⏸</span>pausa</span>` : ''}${e.no_cash ? h`<span class="chip serious"><span class="ic">!</span>sin efectivo</span>` : ''}</div>
+      <div id="spark-${ex}" class="chart" style="margin:6px 0"></div>
+      <div class="small mute">efectivo ${usd(e.cash)} · ${P.length} posiciones${e.stats ? h` · ${e.stats.closed ?? 0} cerradas · PnL neto ${sgn(e.stats.net_pnl)} $` : ''}${isNum(e.fng) ? h` · F&G ${num(e.fng, 0)}` : ''}${isNum(e.net_deposits) && e.net_deposits ? h` · depósitos netos ${usd(e.net_deposits)}` : ''}</div>
+      ${P.length ? h`<div class="scroll"><table style="margin-top:6px"><tbody>${P.map(p => h`<tr><td><b>${p.sym}</b> <span class="mute small">${p.side} · ${p.strategy || ''}</span></td><td class="n">${price(p.mark)}</td><td class="n ${pol(p.pnl)}">${sgn(p.pnl)} $ (${pct(p.pnl_pct, 1)})</td><td class="n mute">${ageTxt((p.age_min || 0) * 60)}</td></tr>`)}</tbody></table></div>` : ''}
+      ${e.regime && typeof e.regime === 'object' && Object.keys(e.regime).length ? h`<div class="small mute" style="margin-top:6px">régimen: ${Object.entries(e.regime).slice(0, 8).map(([k, v], i) => h`${i ? ' · ' : ''}${k} ${isNum(v) ? anyNum(v) : String(v)}`)}</div>` : ''}` : h`<div class="empty">sin status_${ex}.json</div>`}</div>`); }
+  set('cex-body', cards.length ? cards : h`<div class="card"><div class="empty">sin exchanges centralizados configurados</div></div>`);
+  for (const ex of ['binance', 'coinbase']) { const el = $('spark-' + ex); if (el) set('spark-' + ex, spark(E[ex].points_24h, widthOf('spark-' + ex))); }
+}
+function renderActivity(ov) {
+  const a = ov.activity; set('act-badge', badge(a)); const items = list(a, 'items', 'events');
+  set('act-filters', KINDS.map(k => h`<button class="sm" data-kind="${k}" aria-pressed="${String(k === ST.kind)}">${k}</button>`));
+  const rows = items.filter(x => ST.kind === 'todo' || x.kind === ST.kind).slice(0, 80), KC = {risk: 'crit', error: 'crit', scam: 'warn', trade: 'blue', signal: '', skip: '', scan: '', news: ''};
+  set('act-body', !ok(a) ? h`<div class="empty">sin logs</div>` : rows.length ? rows.map(x => h`<div class="row"><span class="t">${String(x.t ?? "").slice(5)}</span><span class="badge ${KC[x.kind] || ''}">${x.kind}</span><span class="mute small">${x.ex}</span><span class="m">${x.msg}</span></div>`) : h`<div class="empty">sin eventos de este tipo</div>`);
+}
+function renderControls(ov) {
+  const meta = ov.meta || {}, hs = ov.health || {}, H = hs.exchanges || hs, lim = ov.solana && ov.solana.limits, exs = Object.keys(meta.exchanges || {}).filter(e => EXS.includes(e));
+  set('ctl-body', h`<div class="ctl">${(exs.length ? exs : EXS).map(ex => { const e = H[ex] || {}, m = (meta.exchanges || {})[ex] || {}; return h`<div class="ex"><b>${ex}</b> <span class="mute small">${m.mode === 'live' ? 'REAL' : 'papel'}${m.enabled === false ? ' · desactivado' : ''}</span> ${e.health ? chip('', e.health) : ''}
+    <div class="b">${e.paused ? h`<button class="sm" data-act="resume" data-ex="${ex}">▶ Reanudar entradas</button>` : h`<button class="sm" data-act="pause" data-ex="${ex}">⏸ Pausar entradas</button>`}
+    ${e.stopped ? h`<button class="sm" data-act="start" data-ex="${ex}">Arrancar proceso</button>` : h`<button class="sm" data-act="stop" data-ex="${ex}">Parar proceso</button>`}
+    ${e.killed ? h`<button class="sm" data-act="unkill" data-ex="${ex}">Desactivar kill</button>` : h`<button class="sm danger" data-act="kill" data-ex="${ex}">KILL</button>`}</div></div>`; })}</div>
+   <div class="small mute" style="margin-top:10px">Límites Solana (solo lectura, de config.json) ${badge(lim)}</div>
+   ${ok(lim) ? h`<div class="kv small" style="margin-top:4px;grid-template-columns:repeat(auto-fill,minmax(150px,auto))">${Object.entries(lim).filter(([k]) => !['available', 'source', 'ts', 'age_s', 'fresh', 'fresh_after_s', 'error'].includes(k)).map(([k, v]) => h`<span><span class="k">${k}</span> ${typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>`)}</div>` : ''}
+   ${(hs.supervisor_tail || []).length ? h`<div class="small mute" style="margin-top:10px">supervisor.log</div><pre>${hs.supervisor_tail.join('\n')}</pre>` : ''}`);
+}
+function renderFooter(ov) {
+  const s = ov.solana || {}, th = [['estado', s], ['curva', s.equity_curve], ['candidatos', s.funnel], ['cerebro', s.brain], ['insider', ov.insider], ['copytrade', ov.copytrade], ['riesgo HL', ov.hl], ['director', ov.director], ['operador', ov.operator]]
+    .filter(([, x]) => x && isNum(x.fresh_after_s)).map(([n, x]) => `${n} ${ageTxt(x.fresh_after_s)}`);
+  set('footer', h`Datos del propio bot (ficheros de estado en ${(ov.meta || {}).host || 'la máquina'}); ningún valor se calcula fuera de la máquina. Umbrales de frescura: ${th.join(' · ') || '—'}.`);
+}
+
+/* ---- interaction ---- */
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.range) { ST.range = b.dataset.range; if (last) renderEquity(last); return; }
+  if (b.dataset.toggle) { ST[b.dataset.toggle] = !ST[b.dataset.toggle]; if (last) (b.dataset.toggle === 'eqTable' ? renderEquity : renderDaily)(last); return; }
+  if (b.dataset.kind) { ST.kind = b.dataset.kind; if (last) renderActivity(last); return; }
+  if (!b.dataset.act) return;
+  const a = b.dataset.act, ex = b.dataset.ex, extra = {};
+  if (a === 'close') { const lab = b.dataset.label || b.dataset.sym; if (!confirm(`¿Cerrar la posición ${lab} en ${ex}? Se pedirá la venta al bot.`)) return; extra.sym = b.dataset.sym; }
+  else if (a === 'kill') { if (prompt(`KILL ${ex}: pausa las entradas y pide el cierre de TODAS las posiciones. Escribe KILL para confirmar.`) !== 'KILL') { toast('KILL cancelado', true); return; } }
+  else if (a === 'stop' && !confirm(`¿Parar el proceso ${ex}?`)) return;
+  act(a, ex, extra);
+});
+async function act(action, ex, extra) {
+  try {
+    const r = await fetch('/api/action', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF': CSRF}, body: JSON.stringify({action, ex, ...extra})});
+    if (r.status === 401) { location = '/login'; return; }
+    const j = await r.json().catch(() => ({})); toast(j.msg || (r.ok ? 'hecho' : 'error ' + r.status), r.ok && j.ok !== false); tick();
+  } catch (e) { toast('sin conexión: acción no enviada', false); }
+}
+let toastT; function toast(msg, good) { const t = $('toast'); t.textContent = msg; t.className = good ? '' : 'bad'; t.style.display = 'block'; clearTimeout(toastT); toastT = setTimeout(() => { t.style.display = 'none'; }, 4000); }
+$('eq-body').addEventListener('pointermove', e => {
+  if (!eqScale) return; const svg = $('eq-body').querySelector('svg'), r = svg.getBoundingClientRect(), x = (e.clientX - r.left) * eqScale.W / r.width, P = eqScale.pts;
+  let lo = 0, hi = P.length - 1; while (lo < hi) { const mid = (lo + hi) >> 1; if (eqScale.X(P[mid][0]) < x) lo = mid + 1; else hi = mid; }
+  const i = lo > 0 && Math.abs(eqScale.X(P[lo - 1][0]) - x) < Math.abs(eqScale.X(P[lo][0]) - x) ? lo - 1 : lo, p = P[i], px = eqScale.X(p[0]).toFixed(1), py = eqScale.Y(p[1]).toFixed(1);
+  const L = $('eq-x'), D = $('eq-dot'); L.setAttribute('x1', px); L.setAttribute('x2', px); L.setAttribute('visibility', 'visible'); D.setAttribute('cx', px); D.setAttribute('cy', py); D.setAttribute('visibility', 'visible');
+  showTip(e.clientX, e.clientY, h`<b>${usd(p[1])}</b><div class="k">${dhm(p[0] / 1000)}</div>`);
+});
+$('eq-body').addEventListener('pointerleave', () => { hideTip(); const L = $('eq-x'), D = $('eq-dot'); if (L) L.setAttribute('visibility', 'hidden'); if (D) D.setAttribute('visibility', 'hidden'); });
+const barTip = (g, x, y) => { const days = JSON.parse($('dp-body').dataset.days || '[]'), d = days[+g.dataset.i]; if (d) showTip(x, y, h`<b class="${pol(d.pnl)}">${sgn(d.pnl, 3)} $</b><div class="k">${d.day} · ${d.n ?? 0} ventas · ${d.wins ?? 0} ganadas</div>`); };
+$('dp-body').addEventListener('pointermove', e => { const g = e.target.closest('.bar'); if (g) barTip(g, e.clientX, e.clientY); else hideTip(); });
+$('dp-body').addEventListener('pointerleave', hideTip);
+$('dp-body').addEventListener('focusin', e => { const g = e.target.closest('.bar'); if (g) { const r = g.getBoundingClientRect(); barTip(g, r.left + r.width / 2, r.top); } });
+$('dp-body').addEventListener('focusout', hideTip);
+let rsT; addEventListener('resize', () => { clearTimeout(rsT); rsT = setTimeout(() => { if (last) render(last); }, 150); });
+
+/* ---- polling ---- */
+async function tick() {
+  try {
+    const r = await fetch('/api/overview', {cache: 'no-store'}); if (r.status === 401) { location = '/login'; return; }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const ov = await r.json(); last = ov; document.body.classList.remove('offline'); render(ov); document.body.dataset.ok = '1';
+  } catch (e) { document.body.classList.add('offline'); $('conn').textContent = 'sin conexión desde ' + (last && last.meta ? hms(last.meta.now) : '—'); }
+}
+tick(); setInterval(tick, POLL_MS);
+</script>
+</body>
+</html>

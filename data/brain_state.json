@@ -1,0 +1,180 @@
+{
+ "updated": "2026-10-31T18:05:34",
+ "n_labelled": 715,
+ "active": true,
+ "oos": {
+  "n_test": 215,
+  "brain_trades": 124,
+  "brain_avg_ret_%": 1.8,
+  "baseline_trades": 21,
+  "baseline_avg_ret_%": -4.2,
+  "all_avg_ret_%": 1.28
+ },
+ "base": 0.63,
+ "weights": {
+  "bots": {
+   "p_on": 0.642,
+   "p_off": 0.63,
+   "n_on": 193,
+   "n_off": 522,
+   "ret_on_%": 0.88
+  },
+  "liq_growth": {
+   "p_on": 0.626,
+   "p_off": 0.642,
+   "n_on": 393,
+   "n_off": 322,
+   "ret_on_%": 0.57
+  },
+  "m5_neg": {
+   "p_on": 0.691,
+   "p_off": 0.628,
+   "n_on": 57,
+   "n_off": 658,
+   "ret_on_%": 3.38
+  },
+  "young": {
+   "p_on": 0.543,
+   "p_off": 0.671,
+   "n_on": 206,
+   "n_off": 509,
+   "ret_on_%": 0.01
+  },
+  "momentum": {
+   "p_on": 0.482,
+   "p_off": 0.717,
+   "n_on": 252,
+   "n_off": 463,
+   "ret_on_%": -1.24
+  },
+  "insider_sell": {
+   "p_on": 0.637,
+   "p_off": 0.633,
+   "n_on": 14,
+   "n_off": 701,
+   "ret_on_%": 1.13
+  },
+  "score_hi": {
+   "p_on": 0.357,
+   "p_off": 0.668,
+   "n_on": 72,
+   "n_off": 643,
+   "ret_on_%": -5.44
+  },
+  "insiders": {
+   "p_on": 0.612,
+   "p_off": 0.66,
+   "n_on": 396,
+   "n_off": 319,
+   "ret_on_%": 1.39
+  },
+  "holder_growth": {
+   "p_on": 0.58,
+   "p_off": 0.643,
+   "n_on": 106,
+   "n_off": 609,
+   "ret_on_%": 1.15
+  },
+  "narrative": {
+   "p_on": 0.641,
+   "p_off": 0.633,
+   "n_on": 70,
+   "n_off": 645,
+   "ret_on_%": 2.82
+  },
+  "buy_press": {
+   "p_on": 0.66,
+   "p_off": 0.588,
+   "n_on": 454,
+   "n_off": 261,
+   "ret_on_%": 1.19
+  },
+  "whale_sells": {
+   "p_on": 0.679,
+   "p_off": 0.632,
+   "n_on": 14,
+   "n_off": 701,
+   "ret_on_%": 3.57
+  },
+  "velocity": {
+   "p_on": 0.478,
+   "p_off": 0.658,
+   "n_on": 91,
+   "n_off": 624,
+   "ret_on_%": -1.65
+  },
+  "insider_conv": {
+   "p_on": 0.652,
+   "p_off": 0.633,
+   "n_on": 15,
+   "n_off": 700,
+   "ret_on_%": 1.67
+  },
+  "deep_liq": {
+   "p_on": 0.74,
+   "p_off": 0.466,
+   "n_on": 439,
+   "n_off": 276,
+   "ret_on_%": 1.77
+  },
+  "h1_hot": {
+   "p_on": 0.463,
+   "p_off": 0.669,
+   "n_on": 118,
+   "n_off": 597,
+   "ret_on_%": -1.08
+  },
+  "insider_elite": {
+   "p_on": 0.652,
+   "p_off": 0.633,
+   "n_on": 15,
+   "n_off": 700,
+   "ret_on_%": 1.67
+  },
+  "whale_buys": {
+   "p_on": 0.665,
+   "p_off": 0.632,
+   "n_on": 19,
+   "n_off": 696,
+   "ret_on_%": 2.1
+  },
+  "heat_hot": {
+   "p_on": 0.595,
+   "p_off": 0.642,
+   "n_on": 125,
+   "n_off": 590,
+   "ret_on_%": -0.41
+  },
+  "vol_liq_hi": {
+   "p_on": 0.582,
+   "p_off": 0.694,
+   "n_on": 386,
+   "n_off": 329,
+   "ret_on_%": 0.64
+  },
+  "uniq_buyers": {
+   "p_on": 0.611,
+   "p_off": 0.639,
+   "n_on": 128,
+   "n_off": 587,
+   "ret_on_%": 0.55
+  },
+  "conc_falling": {
+   "p_on": 0.597,
+   "p_off": 0.635,
+   "n_on": 29,
+   "n_off": 686,
+   "ret_on_%": 2.29
+  },
+  "socials": {
+   "p_on": 0.484,
+   "p_off": 0.7,
+   "n_on": 216,
+   "n_off": 499,
+   "ret_on_%": -1.64
+  }
+ },
+ "avg_win": 0.0693,
+ "avg_loss": 0.0981,
+ "n": 715
+}

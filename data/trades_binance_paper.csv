@@ -1,0 +1,4 @@
+time,exchange,symbol,side,price,qty,fee,pnl,reason,equity
+2026-10-29T20:01:40,binance,XRPUSDT,SELL,1.28366,46.7063,0.0450,-0.1088,mean_reversion:trail,999.51
+2026-10-29T20:16:31,binance,CELOUSDT,SELL,0.0773413,763.852,0.0443,-1.0270,mean_reversion:stop,998.86
+2026-10-29T20:26:56,binance,ETHUSDT,SELL,2330.08,0.0214485,0.0375,-0.0606,e2e_test:manual_close,998.80

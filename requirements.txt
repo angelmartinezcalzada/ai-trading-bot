@@ -1,0 +1,5 @@
+requests>=2.31
+flask>=3.0
+numpy>=1.26
+solders>=0.21
+pytest>=8

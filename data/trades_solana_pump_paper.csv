@@ -1,0 +1,4 @@
+t_open,t_close,sym,mint,entry,exit,gross_pct,cost_pct,net_pct,hold_min,reason,setup,tag
+2026-10-31T17:41:08,2026-10-31T18:06:18,USELESS,Dz9mQ9NzkBcCsuGPFJ3r1bS4wgqKMHBPiVuniW8Mbonk,0.1288,0.1283,-0.39,1.08,-1.47,25.2,pump_paper:time,rug_insiders|concentrated,PUMP_PAPER
+2026-10-31T17:41:13,2026-10-31T18:06:18,CATE,Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump,0.04262,0.04258,-0.09,1.09,-1.18,25.1,pump_paper:time,rug_insiders,PUMP_PAPER
+2026-10-31T17:48:26,2026-10-31T18:14:07,JEANPHIL,GTBxUiw6wJdmmkCGZgRHLyYxqu1vG4KtRpeox6yDpump,0.003412,0.003493,2.37,2.63,-0.26,25.7,pump_paper:time,rug_insiders,PUMP_PAPER

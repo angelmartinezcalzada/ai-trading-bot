@@ -1,0 +1,260 @@
+{
+ "generated": "2026-10-31 (revised 21:45 UTC after the adversarial review: survivorship of the resolved universe corrected)",
+ "venue": "Hyperliquid perps via Keel (app.usekeel.io)",
+ "cost_model": "fees 4.5 bps + slippage 4.5 bps per fill, carry (funding) included; $10,000 starting capital unless stated",
+ "windows": {
+  "in_sample": "2024-08-15 .. 2026-03-31 (594 days)",
+  "out_of_sample": "2026-04-01 .. 2026-10-30 (213 days) - not used to choose any parameter",
+  "full": "2024-08-15 .. 2026-10-30 (807 days)"
+ },
+ "honest_summary": "The trend rule (SuperTrend 10/3 + Bollinger upper half + ATR7/21 > 0.85, 1d, long-only, 33%/name, 1x) has a positive but modest edge when the 15 traded names are chosen WITHOUT hindsight: OOS Sharpe 1.15, full-window 0.76 with a -58% drawdown. The Sharpe 1.9-2.0 figures reported earlier in this session came from a universe resolved on 2026-07-06 (inside the OOS window) and are inflated by survivorship. 'Very good performance' is not supported by the honest numbers; 'a measured, small, executable edge in paper' is.",
+ "selected": {
+  "strategy_id": "str_01m69nnhfd4z38bbcy07gs7kk6",
+  "name": "HL supertrend+bollinger causal top-15 (no hindsight universe)",
+  "head_version": 1,
+  "source_file": "strategies/supertrend_bollinger_causal_top15.keel.py",
+  "universe": "top-60 pool by 90d volume (resolved 2026-10-31), traded set = weekly top-15 by trailing 30-day dollar volume (RollingVolumeUniverseMask, causal)",
+  "paper_run": "dep_01m69ygrjews0qmgq2sraj8rdr started 2026-10-31 21:41 UTC with $1,000 simulated capital, daily 11:59 UTC; see hl_paper.json (replaces dep_01m69j62wfa03zrqxgbf71k436, which ran the hindsight universe and was stopped)",
+  "runs": {
+   "out_of_sample": {
+    "id": "btr_01m69npabhj1hsrvx1534x709n",
+    "sharpe": 1.15,
+    "return_pct": 43.5,
+    "max_dd_pct": -30.1,
+    "profit_factor": 1.31,
+    "win_rate_pct": 47.5
+   },
+   "full": {
+    "id": "btr_01m69np54xf2f34gbpx0nb77yd",
+    "sharpe": 0.76,
+    "return_pct": 91.2,
+    "max_dd_pct": -58.2,
+    "profit_factor": 1.18,
+    "sortino": 1.16,
+    "trades": 640,
+    "fees_paid_usd": 1491,
+    "carry_usd": -5065,
+    "quarters": {
+     "2024-Q3 (partial)": 43.4,
+     "2024-Q4": 41.7,
+     "2025-Q1": -28.4,
+     "2025-Q2": 13.6,
+     "2025-Q3": 27.8,
+     "2025-Q4": -15.2,
+     "2026-Q1": -28.0,
+     "2026-Q2": 28.8,
+     "2026-Q3": 55.1,
+     "2026-Q4 (to Oct 30)": -25.8
+    },
+    "quarters_positive": "6 of 10",
+    "in_sample_slice_to_2026-03-31": {
+     "return_pct": 29.0,
+     "max_dd_pct": -58.2,
+     "note": "slice of the full run (no Sharpe for slices)"
+    }
+   },
+   "realism": {
+    "min_capital_usd_for_under_25pct_orders_below_10usd": 64,
+    "min_capital_usd_for_under_5pct": 100,
+    "note": "Keel realism on the full run with min_trade_size 0.05"
+   }
+  },
+  "reference_hold": {
+   "BTC_full_window_return_pct": 38.8,
+   "BTC_full_window_max_dd_pct": -53.0
+  }
+ },
+ "hindsight_reference": {
+  "strategy_id": "str_01m69h9m4jb20rdq7nzbzw1468",
+  "name": "HL supertrend+bollinger top15 (base)",
+  "head_version": 8,
+  "source_file": "strategies/supertrend_bollinger_small.keel.py",
+  "why_not_selected": "Universe = top-15 by volume resolved by Keel on 2026-07-06, i.e. chosen inside the OOS window (PUMP, XPL, LIT, ZEC, VVV, GRAM entered because they became big in 2026). The rule itself is identical to the selected one; only the name list knows the future.",
+  "runs": {
+   "in_sample_v2_max_weight_0.34": {
+    "id": "btr_01m69hkk8bdh4e4ef07rybp32z",
+    "sharpe": 1.69,
+    "return_pct": 279.2,
+    "max_dd_pct": -33.2,
+    "profit_factor": 1.7,
+    "trades": 333
+   },
+   "out_of_sample_v3": {
+    "id": "btr_01m69hxq74ha473j7jvctq3eer",
+    "sharpe": 1.98,
+    "return_pct": 105.1,
+    "max_dd_pct": -29.9,
+    "profit_factor": 1.7,
+    "trades": 382,
+    "win_rate_pct": 70.5
+   },
+   "full_v3": {
+    "id": "btr_01m69hxmw3j8qd67ghzqkvwpm9",
+    "sharpe": 1.74,
+    "return_pct": 772.9,
+    "max_dd_pct": -36.8,
+    "profit_factor": 1.66,
+    "trades": 778
+   },
+   "full_v8_min_trade_size_0.05": {
+    "id": "btr_01m69npfh8yh9s625szn6tr5wz",
+    "sharpe": 1.79,
+    "return_pct": 855.1,
+    "max_dd_pct": -35.4,
+    "profit_factor": 1.69,
+    "trades": 456,
+    "quarters": {
+     "2024-Q3 (partial)": 34.1,
+     "2024-Q4": 85.8,
+     "2025-Q1": -11.3,
+     "2025-Q2": 27.3,
+     "2025-Q3": 23.7,
+     "2025-Q4": 6.1,
+     "2026-Q1": 24.0,
+     "2026-Q2": 48.4,
+     "2026-Q3": 56.4,
+     "2026-Q4 (to Oct 30)": -10.2
+    },
+    "quarters_positive": "8 of 10 (an earlier note in this repo said 9 of 10: wrong)"
+   },
+   "out_of_sample_v8": {
+    "id": "btr_01m69npdg72gr22ygwya3wtvbw",
+    "sharpe": 1.94,
+    "return_pct": 104.0,
+    "max_dd_pct": -30.0
+   },
+   "full_v3_at_48_usd": {
+    "id": "btr_01m69hyxcjb8e6ypmvqgtjvvbb",
+    "note": "48% of orders under Hyperliquid's $10 minimum -> not executable with $48 (before min_trade_size)"
+   },
+   "out_of_sample_v3_at_150_usd": {
+    "id": "btr_01m69neg5hfhp0z76805qcqv55",
+    "note": "52% of orders sub-minimum before min_trade_size"
+   },
+   "out_of_sample_v3_at_340_usd": {
+    "id": "btr_01m69nehz8af536gj756t6n639",
+    "note": "37% sub-minimum before min_trade_size"
+   },
+   "out_of_sample_v8_at_150_usd": {
+    "id": "btr_01m69npdg72gr22ygwya3wtvbw",
+    "note": "2.1% of orders sub-minimum with min_trade_size 0.05 -> $150 is executable"
+   },
+   "perturbation_multiplier_2.4": {
+    "id": "btr_01m69hytrvap73zfyyf5d2n1rj",
+    "sharpe": 1.59,
+    "return_pct": 573.7,
+    "max_dd_pct": -40.8
+   },
+   "perturbation_multiplier_3.6": {
+    "id": "btr_01m69j0nz5h0f2ezyd14ctxzxe",
+    "sharpe": 1.79,
+    "return_pct": 819.0,
+    "max_dd_pct": -38.0
+   },
+   "sizing_0.25_per_name": {
+    "id": "btr_01m69j1g02vph4gnwsbgwwdt3e",
+    "sharpe": 1.63,
+    "return_pct": 524.2,
+    "max_dd_pct": -35.2,
+    "note": "worse Sharpe -> rejected"
+   }
+  },
+  "pre_2025_basket_check": {
+   "strategy_id": "str_01m69nekhr5kw2p5xk64etgh8b",
+   "full": {
+    "id": "btr_01m69ng7894p4nnqmc28pjd6x9",
+    "sharpe": 0.33,
+    "return_pct": 7.5,
+    "max_dd_pct": -71.5
+   },
+   "out_of_sample": {
+    "id": "btr_01m69ng8xjrk7n4840eqbe3h31",
+    "sharpe": 0.15,
+    "return_pct": -2.0
+   },
+   "why": "same rule on names that already existed before 2025: most of the hindsight result disappears -> the universe choice, not the rule, drove the 1.9-2.0 Sharpe"
+  }
+ },
+ "rejected": {
+  "causal_top15_with_regime_gate": {
+   "strategy_id": "str_01m69y4wqh1epbc2jg5xambwt7",
+   "full": {
+    "id": "btr_01m69y5yw5t11z5jdcx4228g67",
+    "sharpe": 0.72,
+    "return_pct": 76.0,
+    "max_dd_pct": -44.5
+   },
+   "out_of_sample": {
+    "id": "btr_01m69y63mwh0h2g5jkd709x31n",
+    "sharpe": 0.33,
+    "return_pct": 1.2
+   },
+   "why": "a market-trend regime gate (RegimeGate on MarketTrendRegimeFilter) cuts the drawdown in sample but kills the OOS return -> rejected"
+  },
+  "confluence_4h_top15": {
+   "strategy_id": "str_01m69h9kgf6hzebaetby47kk8t",
+   "version_tested": 4,
+   "in_sample": {
+    "id": "btr_01m69hr7j8ftttbzjsfb1frcdq",
+    "sharpe": 1.85,
+    "max_dd_pct": -29.6
+   },
+   "out_of_sample": {
+    "id": "btr_01m69hshsm8f09vfgravmrnfe3",
+    "sharpe": 0.53,
+    "return_pct": 8.5,
+    "profit_factor": 1.07
+   },
+   "why": "edge did not survive out of sample; 4h clock pays ~10%/yr in fees (hindsight universe too)"
+  },
+  "momentum_funding_top30": {
+   "strategy_id": "str_01m69h9jq7qbq0gx8m5kfpq2yv",
+   "in_sample": {
+    "id": "btr_01m69hb25d8aaxkjaq25jbrdx6",
+    "sharpe": 1.85,
+    "max_dd_pct": -16.6
+   },
+   "out_of_sample": {
+    "id": "btr_01m69hsn9bkbh312yh327ebnmv",
+    "sharpe": 1.99,
+    "return_pct": 21.5,
+    "max_dd_pct": -11.7
+   },
+   "why": "robust but continuous weights over 30 names need ~$15,000 so that <5% of orders fall under $10; universe resolved with hindsight as well; keep for later"
+  },
+  "stochastic_reversal_1d": {
+   "strategy_id": "str_01m69h9mrw5qjvh50s2pj2emb0",
+   "in_sample": {
+    "id": "btr_01m69hb8gm88cxbpf7k4eb1ghn",
+    "sharpe": 0.78,
+    "return_pct": 24.9
+   },
+   "why": "too few trades, low Sharpe"
+  },
+  "top3_momentum_rotation_weekly": {
+   "strategy_id": "str_01m69hjq5ram4eg82br9myjz69",
+   "in_sample": {
+    "id": "btr_01m69hr9wry5rmw9wyfhnkzvyz",
+    "sharpe": 0.43,
+    "max_dd_pct": -45.4
+   },
+   "why": "weekly cadence too slow to exit crypto drawdowns"
+  },
+  "meme_perps_confluence_4h": {
+   "strategy_id": "str_01m69hjqs60d0hk6nz972qyvkg",
+   "in_sample": {
+    "id": "btr_01m69hkq00dzsvz3capbnn08r8",
+    "sharpe": 0.7,
+    "max_dd_pct": -53.5,
+    "profit_factor": 1.11
+   },
+   "why": "same rule on 18 memecoin perps (also a hindsight list). Earlier this was read as 'the memecoin universe is the problem'; against the CAUSAL top-15 in-sample slice (+29%, DD -58%) the gap is small, so the Keel comparison does not prove it. What does say memecoins lose money is the bot's own real record (PF 0.44)."
+  }
+ },
+ "coinversa_study": {
+  "file": "../research/coinversa_study.py",
+  "inputs": "../research/data/coinversa_2026-10/",
+  "window": "2026-10-01 .. 2026-10-31 hourly, BTC/SOL/FARTCOIN",
+  "conclusion": "cohort bias (Apex/Sharps/Crowd) has no consistent predictive power on 1h-24h returns (pooled |corr| <= 0.10, sign differs across coins) -> used as risk context only"
+ }
+}

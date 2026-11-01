@@ -1,0 +1,31 @@
+{
+ "deployment_id": "dep_01m69ygrjews0qmgq2sraj8rdr",
+ "url": "https://app.usekeel.io/paper/dep_01m69ygrjews0qmgq2sraj8rdr",
+ "strategy_id": "str_01m69nnhfd4z38bbcy07gs7kk6",
+ "strategy_name": "HL supertrend+bollinger causal top-15 (no hindsight universe)",
+ "strategy_version": 1,
+ "started": "2026-10-31T21:41:00Z",
+ "replaces": {
+  "deployment_id": "dep_01m69j62wfa03zrqxgbf71k436",
+  "strategy_id": "str_01m69h9m4jb20rdq7nzbzw1468",
+  "stopped": "2026-10-31T21:40:00Z",
+  "why": "it ran the top-15 resolved on 2026-07-06 (hindsight universe); 1 evaluation, 2 fills, nothing lost"
+ },
+ "simulated_capital_usd": 1000,
+ "schedule": "daily at 11:59 UTC (the strategy's 1d bar closes at 12:00 UTC)",
+ "auto_pause": "after 28 days without an owner visit to the Keel web app",
+ "expectation": "honest backtest of this exact strategy: OOS Sharpe 1.15 / +43.5% / max DD -30%; full window Sharpe 0.76 / max DD -58% with two -28% quarters. A paper drawdown of -30% is inside the tested range and is not by itself a reason to stop.",
+ "go_live_criteria": [
+  ">= 21 days and >= 20 evaluations of paper (Keel's own graduation gates) whose fills track the backtest (parity within 50 bps; drift explained by the fill model only)",
+  ">= 150 USD on the Hyperliquid account: with min_trade_size 0.05 about 2% of orders fall under the $10 minimum at $150 (Keel realism: <25% from ~$64, <5% from ~$100); with 48 USD it is not worth running",
+  "no new out-of-sample quarter with Sharpe < 0.5 AND return below the BTC hold over the same quarter",
+  "Angel decides the leverage in the Keel web app: 1x is the tested setting; every x above 1 multiplies the -58% historical drawdown"
+ ],
+ "keel_graduation_thresholds": {
+  "min_age_days": 21,
+  "min_evaluations": 20,
+  "parity_band_bps": 50,
+  "note": "Keel's own paper->live readiness gates, read from keel_live_monitor on 2026-10-31"
+ },
+ "first_evaluation": "pending: next scheduled evaluation 2026-11-01 11:59 UTC"
+}

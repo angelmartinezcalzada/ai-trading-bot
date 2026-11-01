@@ -1,0 +1,542 @@
+[
+ {
+  "coin": "BTC",
+  "feature": "apex",
+  "h": 1,
+  "n": 665,
+  "corr": -0.028,
+  "ret_low_%": -0.007,
+  "ret_high_%": -0.025,
+  "spread_%": -0.018
+ },
+ {
+  "coin": "BTC",
+  "feature": "apex",
+  "h": 4,
+  "n": 662,
+  "corr": -0.064,
+  "ret_low_%": -0.024,
+  "ret_high_%": -0.141,
+  "spread_%": -0.117
+ },
+ {
+  "coin": "BTC",
+  "feature": "apex",
+  "h": 24,
+  "n": 642,
+  "corr": -0.088,
+  "ret_low_%": -0.259,
+  "ret_high_%": -0.614,
+  "spread_%": -0.355
+ },
+ {
+  "coin": "BTC",
+  "feature": "apex_d24",
+  "h": 1,
+  "n": 641,
+  "corr": -0.019,
+  "ret_low_%": -0.027,
+  "ret_high_%": -0.015,
+  "spread_%": 0.011
+ },
+ {
+  "coin": "BTC",
+  "feature": "apex_d24",
+  "h": 4,
+  "n": 638,
+  "corr": -0.074,
+  "ret_low_%": -0.062,
+  "ret_high_%": -0.098,
+  "spread_%": -0.036
+ },
+ {
+  "coin": "BTC",
+  "feature": "apex_d24",
+  "h": 24,
+  "n": 618,
+  "corr": -0.086,
+  "ret_low_%": -0.269,
+  "ret_high_%": -0.675,
+  "spread_%": -0.406
+ },
+ {
+  "coin": "BTC",
+  "feature": "sharps",
+  "h": 1,
+  "n": 664,
+  "corr": 0.004,
+  "ret_low_%": 0.008,
+  "ret_high_%": -0.034,
+  "spread_%": -0.042
+ },
+ {
+  "coin": "BTC",
+  "feature": "sharps",
+  "h": 4,
+  "n": 661,
+  "corr": 0.01,
+  "ret_low_%": -0.05,
+  "ret_high_%": -0.097,
+  "spread_%": -0.048
+ },
+ {
+  "coin": "BTC",
+  "feature": "sharps",
+  "h": 24,
+  "n": 641,
+  "corr": -0.083,
+  "ret_low_%": -0.207,
+  "ret_high_%": -0.761,
+  "spread_%": -0.555
+ },
+ {
+  "coin": "BTC",
+  "feature": "sharps_d24",
+  "h": 1,
+  "n": 640,
+  "corr": 0.029,
+  "ret_low_%": -0.025,
+  "ret_high_%": -0.006,
+  "spread_%": 0.018
+ },
+ {
+  "coin": "BTC",
+  "feature": "sharps_d24",
+  "h": 4,
+  "n": 637,
+  "corr": 0.054,
+  "ret_low_%": -0.105,
+  "ret_high_%": -0.007,
+  "spread_%": 0.098
+ },
+ {
+  "coin": "BTC",
+  "feature": "sharps_d24",
+  "h": 24,
+  "n": 617,
+  "corr": -0.148,
+  "ret_low_%": -0.323,
+  "ret_high_%": -0.447,
+  "spread_%": -0.124
+ },
+ {
+  "coin": "BTC",
+  "feature": "crowd",
+  "h": 1,
+  "n": 665,
+  "corr": 0.023,
+  "ret_low_%": -0.031,
+  "ret_high_%": -0.006,
+  "spread_%": 0.025
+ },
+ {
+  "coin": "BTC",
+  "feature": "crowd",
+  "h": 4,
+  "n": 662,
+  "corr": 0.063,
+  "ret_low_%": -0.155,
+  "ret_high_%": -0.02,
+  "spread_%": 0.135
+ },
+ {
+  "coin": "BTC",
+  "feature": "crowd",
+  "h": 24,
+  "n": 642,
+  "corr": 0.111,
+  "ret_low_%": -0.512,
+  "ret_high_%": -0.194,
+  "spread_%": 0.318
+ },
+ {
+  "coin": "BTC",
+  "feature": "crowd_d24",
+  "h": 1,
+  "n": 641,
+  "corr": 0.001,
+  "ret_low_%": -0.016,
+  "ret_high_%": -0.029,
+  "spread_%": -0.013
+ },
+ {
+  "coin": "BTC",
+  "feature": "crowd_d24",
+  "h": 4,
+  "n": 638,
+  "corr": 0.062,
+  "ret_low_%": -0.121,
+  "ret_high_%": -0.053,
+  "spread_%": 0.068
+ },
+ {
+  "coin": "BTC",
+  "feature": "crowd_d24",
+  "h": 24,
+  "n": 618,
+  "corr": 0.19,
+  "ret_low_%": -0.618,
+  "ret_high_%": 0.031,
+  "spread_%": 0.649
+ },
+ {
+  "coin": "SOL",
+  "feature": "apex",
+  "h": 1,
+  "n": 665,
+  "corr": -0.066,
+  "ret_low_%": -0.029,
+  "ret_high_%": -0.09,
+  "spread_%": -0.061
+ },
+ {
+  "coin": "SOL",
+  "feature": "apex",
+  "h": 4,
+  "n": 662,
+  "corr": -0.122,
+  "ret_low_%": -0.058,
+  "ret_high_%": -0.339,
+  "spread_%": -0.282
+ },
+ {
+  "coin": "SOL",
+  "feature": "apex",
+  "h": 24,
+  "n": 642,
+  "corr": -0.187,
+  "ret_low_%": -0.591,
+  "ret_high_%": -1.606,
+  "spread_%": -1.016
+ },
+ {
+  "coin": "SOL",
+  "feature": "apex_d24",
+  "h": 1,
+  "n": 641,
+  "corr": -0.033,
+  "ret_low_%": -0.058,
+  "ret_high_%": -0.043,
+  "spread_%": 0.015
+ },
+ {
+  "coin": "SOL",
+  "feature": "apex_d24",
+  "h": 4,
+  "n": 638,
+  "corr": -0.093,
+  "ret_low_%": -0.04,
+  "ret_high_%": -0.172,
+  "spread_%": -0.132
+ },
+ {
+  "coin": "SOL",
+  "feature": "apex_d24",
+  "h": 24,
+  "n": 618,
+  "corr": -0.057,
+  "ret_low_%": -0.863,
+  "ret_high_%": -0.963,
+  "spread_%": -0.1
+ },
+ {
+  "coin": "SOL",
+  "feature": "sharps",
+  "h": 1,
+  "n": 664,
+  "corr": 0.018,
+  "ret_low_%": -0.056,
+  "ret_high_%": -0.01,
+  "spread_%": 0.046
+ },
+ {
+  "coin": "SOL",
+  "feature": "sharps",
+  "h": 4,
+  "n": 661,
+  "corr": 0.049,
+  "ret_low_%": -0.232,
+  "ret_high_%": -0.059,
+  "spread_%": 0.173
+ },
+ {
+  "coin": "SOL",
+  "feature": "sharps",
+  "h": 24,
+  "n": 641,
+  "corr": 0.127,
+  "ret_low_%": -1.599,
+  "ret_high_%": -0.849,
+  "spread_%": 0.75
+ },
+ {
+  "coin": "SOL",
+  "feature": "sharps_d24",
+  "h": 1,
+  "n": 640,
+  "corr": -0.015,
+  "ret_low_%": -0.011,
+  "ret_high_%": -0.052,
+  "spread_%": -0.041
+ },
+ {
+  "coin": "SOL",
+  "feature": "sharps_d24",
+  "h": 4,
+  "n": 637,
+  "corr": 0.008,
+  "ret_low_%": -0.155,
+  "ret_high_%": -0.134,
+  "spread_%": 0.021
+ },
+ {
+  "coin": "SOL",
+  "feature": "sharps_d24",
+  "h": 24,
+  "n": 617,
+  "corr": -0.101,
+  "ret_low_%": -0.456,
+  "ret_high_%": -1.088,
+  "spread_%": -0.632
+ },
+ {
+  "coin": "SOL",
+  "feature": "crowd",
+  "h": 1,
+  "n": 665,
+  "corr": -0.065,
+  "ret_low_%": 0.011,
+  "ret_high_%": -0.074,
+  "spread_%": -0.084
+ },
+ {
+  "coin": "SOL",
+  "feature": "crowd",
+  "h": 4,
+  "n": 662,
+  "corr": -0.12,
+  "ret_low_%": 0.052,
+  "ret_high_%": -0.135,
+  "spread_%": -0.187
+ },
+ {
+  "coin": "SOL",
+  "feature": "crowd",
+  "h": 24,
+  "n": 642,
+  "corr": -0.285,
+  "ret_low_%": 0.121,
+  "ret_high_%": -1.074,
+  "spread_%": -1.195
+ },
+ {
+  "coin": "SOL",
+  "feature": "crowd_d24",
+  "h": 1,
+  "n": 641,
+  "corr": -0.056,
+  "ret_low_%": -0.039,
+  "ret_high_%": -0.049,
+  "spread_%": -0.01
+ },
+ {
+  "coin": "SOL",
+  "feature": "crowd_d24",
+  "h": 4,
+  "n": 638,
+  "corr": -0.087,
+  "ret_low_%": -0.15,
+  "ret_high_%": -0.156,
+  "spread_%": -0.006
+ },
+ {
+  "coin": "SOL",
+  "feature": "crowd_d24",
+  "h": 24,
+  "n": 618,
+  "corr": -0.322,
+  "ret_low_%": -0.164,
+  "ret_high_%": -1.208,
+  "spread_%": -1.044
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "apex",
+  "h": 1,
+  "n": 665,
+  "corr": 0.062,
+  "ret_low_%": -0.136,
+  "ret_high_%": -0.04,
+  "spread_%": 0.096
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "apex",
+  "h": 4,
+  "n": 662,
+  "corr": 0.111,
+  "ret_low_%": -0.427,
+  "ret_high_%": -0.226,
+  "spread_%": 0.201
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "apex",
+  "h": 24,
+  "n": 642,
+  "corr": 0.217,
+  "ret_low_%": -2.896,
+  "ret_high_%": -1.16,
+  "spread_%": 1.735
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "apex_d24",
+  "h": 1,
+  "n": 641,
+  "corr": 0.016,
+  "ret_low_%": -0.043,
+  "ret_high_%": -0.122,
+  "spread_%": -0.079
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "apex_d24",
+  "h": 4,
+  "n": 638,
+  "corr": 0.04,
+  "ret_low_%": -0.211,
+  "ret_high_%": -0.207,
+  "spread_%": 0.004
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "apex_d24",
+  "h": 24,
+  "n": 618,
+  "corr": -0.079,
+  "ret_low_%": -0.443,
+  "ret_high_%": -2.712,
+  "spread_%": -2.269
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "sharps",
+  "h": 1,
+  "n": 664,
+  "corr": -0.002,
+  "ret_low_%": -0.075,
+  "ret_high_%": -0.037,
+  "spread_%": 0.037
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "sharps",
+  "h": 4,
+  "n": 661,
+  "corr": -0.048,
+  "ret_low_%": -0.206,
+  "ret_high_%": -0.3,
+  "spread_%": -0.094
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "sharps",
+  "h": 24,
+  "n": 641,
+  "corr": -0.127,
+  "ret_low_%": -0.64,
+  "ret_high_%": -1.701,
+  "spread_%": -1.061
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "sharps_d24",
+  "h": 1,
+  "n": 640,
+  "corr": -0.002,
+  "ret_low_%": -0.088,
+  "ret_high_%": 0.01,
+  "spread_%": 0.097
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "sharps_d24",
+  "h": 4,
+  "n": 637,
+  "corr": -0.03,
+  "ret_low_%": -0.211,
+  "ret_high_%": -0.003,
+  "spread_%": 0.208
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "sharps_d24",
+  "h": 24,
+  "n": 617,
+  "corr": -0.037,
+  "ret_low_%": -1.69,
+  "ret_high_%": -1.224,
+  "spread_%": 0.466
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "crowd",
+  "h": 1,
+  "n": 665,
+  "corr": -0.039,
+  "ret_low_%": -0.061,
+  "ret_high_%": -0.129,
+  "spread_%": -0.068
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "crowd",
+  "h": 4,
+  "n": 662,
+  "corr": -0.064,
+  "ret_low_%": -0.221,
+  "ret_high_%": -0.456,
+  "spread_%": -0.235
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "crowd",
+  "h": 24,
+  "n": 642,
+  "corr": -0.133,
+  "ret_low_%": -1.155,
+  "ret_high_%": -2.355,
+  "spread_%": -1.2
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "crowd_d24",
+  "h": 1,
+  "n": 641,
+  "corr": -0.023,
+  "ret_low_%": -0.02,
+  "ret_high_%": 0.026,
+  "spread_%": 0.046
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "crowd_d24",
+  "h": 4,
+  "n": 638,
+  "corr": -0.039,
+  "ret_low_%": -0.105,
+  "ret_high_%": -0.034,
+  "spread_%": 0.071
+ },
+ {
+  "coin": "FARTCOIN",
+  "feature": "crowd_d24",
+  "h": 24,
+  "n": 618,
+  "corr": 0.008,
+  "ret_low_%": -0.926,
+  "ret_high_%": -1.554,
+  "spread_%": -0.628
+ }
+]
