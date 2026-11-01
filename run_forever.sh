@@ -1,7 +1,9 @@
 #!/bin/bash
 # 24/7 supervisor: one auto-restarting loop per exchange (+ dashboard + tunnel). Stop all with ./stop.sh
 # Per-exchange stop: touch STOP_<ex> (dashboard does this). Live mode: exchanges.<ex>.mode=live AND keys in keys.env.
-cd "$(dirname "$0")"; rm -f STOP; export PATH="$HOME/bin:$PATH"
+cd "$(dirname "$0")"
+if [ "$(pgrep -fc "run_foreve[r].sh")" -gt 1 ]; then echo "$(date -Is) [supervisor] ya hay un run_forever.sh en marcha; no se arranca otro" >> supervisor.log; exit 0; fi
+rm -f STOP; export PATH="$HOME/bin:$PATH"
 for EX in $(python3 -c "import json;print(' '.join(json.load(open('config.json'))['exchanges']))"); do
   ( while [ ! -f STOP ]; do
       if [ -f "STOP_$EX" ]; then sleep 3; continue; fi

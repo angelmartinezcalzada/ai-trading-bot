@@ -316,7 +316,7 @@ if __name__ == "__main__":
         import memebot; memebot.main(cfg, a.live and cfg["exchanges"]["solana"].get("mode") == "live"); sys.exit()
     live = a.live and cfg["exchanges"][a.exchange].get("mode") == "live"
     keys = {"binance": "BINANCE_API_KEY", "coinbase": "COINBASE_API_KEY"}
-    if a.live and not (live and os.environ.get("LIVE_CONFIRM") == "YES" and os.environ.get(keys.get(a.exchange, "X"))):
+    if a.live and not (live and os.environ.get("LIVE_CONFIRM") == "YES" and (os.environ.get(keys.get(a.exchange, "X")) or (a.exchange == "solana" and os.path.exists("solana_wallet.json")))):   # Solana signs with solana_wallet.json, not an env var
         sys.exit(f"Live refused: need exchanges.{a.exchange}.mode=live, API key env vars and LIVE_CONFIRM=YES")
     b = Bot(cfg, a.exchange, live)
     if a.scan:
