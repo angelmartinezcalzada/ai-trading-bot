@@ -61,6 +61,10 @@ pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:va
 #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#262624;border:1px solid var(--line);border-radius:10px;padding:10px 16px;z-index:10;display:none;max-width:90vw}
 #toast.bad{border-color:var(--crit)}footer{color:var(--mute);font-size:12px;padding:8px 0}
 .empty{color:var(--mute);padding:8px 0}.hero{font-size:30px;font-weight:600}
+/* context tiles + insider tiers */
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}.tl{border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+.tl .l{font-size:11px;color:var(--mute)}.tl .v{font-size:18px;font-weight:600;line-height:1.25;overflow-wrap:anywhere}.tl .s{font-size:11px;color:var(--ink2);overflow-wrap:anywhere}
+.badge.tier-elite{border-color:var(--good);color:#5fd45f}.badge.tier-good{border-color:var(--blue);color:#8fbcf3}.badge.tier-watch{border-color:var(--warn);color:var(--warn)}
 </style>
 </head>
 <body>
@@ -74,6 +78,7 @@ pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:va
 <main class="grid">
  <section id="kpis" class="c12" aria-label="Indicadores"></section>
  <section id="operator" class="card c12" aria-label="Operador automático"><h2>Operador automático <span id="op-badge"></span><span class="sp"></span><span id="op-worst"></span></h2><div id="op-body"></div></section>
+ <section id="context" class="card c12" aria-label="Contexto de mercado"><h2>Contexto de mercado <span id="cx-badge"></span><span class="sp"></span><span id="cx-meta" class="small mute"></span></h2><div id="cx-body"></div></section>
  <section id="equity" class="card c8" aria-label="Curva de patrimonio">
   <h2>Curva de patrimonio Solana <span id="eq-badge"></span><span class="sp"></span><span id="eq-sum" class="small mute"></span></h2>
   <div class="filters" role="group" aria-label="Rango">
@@ -107,7 +112,7 @@ pre{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;color:va
 <script>
 'use strict';
 const CSRF = '{{csrf}}', POLL_MS = 5000, RAMP = ['#86b6ef','#6da7ec','#5598e7','#3987e5','#2a78d6','#256abf','#1c5cab'];
-const EXS = ['solana','binance','coinbase'], KINDS = ['todo','trade','risk','scam','error','scan','signal','skip','news'];
+const EXS = ['solana','binance','coinbase'], KINDS = ['todo','trade','risk','scam','error','scan','signal','skip','news'], DOW = ['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];
 const ST = {range:'24h', eqTable:false, dailyTable:false, kind:'todo'};
 let last = null, eqScale = null;
 const $ = id => document.getElementById(id);
@@ -206,10 +211,29 @@ function spark(pts, W) { const H = 40; if (!pts || pts.length < 2) return h`<div
   const d = pts.map((p, i) => (i ? 'L' : 'M') + ((p[0] - t0) / (t1 - t0 || 1) * (W - 4) + 2).toFixed(1) + ',' + (hi === lo ? H / 2 : 4 + (hi - p[1]) / (hi - lo) * (H - 8)).toFixed(1)).join('');
   return h`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Patrimonio 24 h: de ${usd(pts[0][1])} a ${usd(pts[pts.length - 1][1])}"><path d="${d}" fill="none" stroke="#3987e5" stroke-width="2" stroke-linejoin="round"/></svg>`; }
 const widthOf = id => Math.max(240, $(id).clientWidth || 600);
+function sparkPct(pts, W, lab) { // tiny line of a percentage series with a zero baseline; pts [[ms, pct]]
+  const H = 36; if (!pts || pts.length < 2) return h``;
+  const ys = pts.map(p => p[1]), lo = Math.min(0, ...ys), hi = Math.max(0, ...ys), t0 = pts[0][0], t1 = pts[pts.length - 1][0] || t0 + 1;
+  const X = t => (t - t0) / (t1 - t0 || 1) * (W - 6) + 3, Y = v => hi === lo ? H / 2 : 3 + (hi - v) / (hi - lo) * (H - 6), last = pts[pts.length - 1];
+  const d = pts.map((p, i) => (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ',' + Y(p[1]).toFixed(1)).join('');
+  return h`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="display:block" role="img" aria-label="${lab}: ${pts.length} valores, último ${pct(last[1], 2)}"><line x1="3" x2="${W - 3}" y1="${Y(0).toFixed(1)}" y2="${Y(0).toFixed(1)}" stroke="#383835"/><path d="${d}" fill="none" stroke="#3987e5" stroke-width="1.5" stroke-linejoin="round"/><circle cx="${X(last[0]).toFixed(1)}" cy="${Y(last[1]).toFixed(1)}" r="2.5" fill="${last[1] < 0 ? '#e66767' : '#3987e5'}"/></svg>`;
+}
+/* ---- generic, escaped rendering of foreign JSON (regime gate / table, rotation slice): bounded by dash_data, never trusted ---- */
+const fmtAny = v => v == null ? '—' : Array.isArray(v) ? (v.length ? v.map(fmtAny).join(', ') : '—') : typeof v === 'object' ? JSON.stringify(v).slice(0, 80) : typeof v === 'boolean' ? (v ? 'sí' : 'no') : isNum(v) ? anyNum(v) : String(v);
+function genericTable(o, empty) { // dict of dicts (one level deeper allowed) or list of dicts -> compact table; scalars as text
+  const isObj = x => x && typeof x === 'object' && !Array.isArray(x); let rows = [];
+  if (Array.isArray(o)) rows = o.map((x, i) => [String(i), isObj(x) ? x : {valor: x}]);
+  else if (isObj(o)) for (const [k, v] of Object.entries(o)) { if (isObj(v) && Object.values(v).some(isObj)) for (const [k2, v2] of Object.entries(v)) rows.push([k + ' = ' + k2, isObj(v2) ? v2 : {valor: v2}]); else rows.push([k, isObj(v) ? v : {valor: v}]); }
+  else return h`<span>${fmtAny(o)}</span>`;
+  if (!rows.length) return h`<div class="empty">${empty || 'sin filas'}</div>`;
+  const cols = []; for (const [, v] of rows) for (const c of Object.keys(v)) if (!cols.includes(c) && cols.length < 6) cols.push(c);
+  return h`<div class="scroll"><table><thead><tr><th></th>${cols.map(c => h`<th class="n">${c}</th>`)}</tr></thead><tbody>${rows.slice(0, 24).map(([k, v]) => h`<tr><td><b>${k}</b></td>${cols.map(c => h`<td class="n small">${fmtAny(v[c])}</td>`)}</tr>`)}</tbody></table></div>`;
+}
+const tierBadge = t => t === 'elite' ? h`<span class="badge tier-elite">élite</span>` : t === 'good' ? h`<span class="badge tier-good">buena</span>` : t === 'watch' ? h`<span class="badge tier-watch">vigilada</span>` : h`<span class="mute">—</span>`;
 
 /* ---- render: one entry point, one function per section ---- */
 function render(ov) {
-  renderTop(ov); renderKpis(ov); renderOperator(ov); renderEquity(ov); renderDaily(ov); renderPositions(ov); renderScan(ov); renderTrades(ov);
+  renderTop(ov); renderKpis(ov); renderOperator(ov); renderContext(ov); renderEquity(ov); renderDaily(ov); renderPositions(ov); renderScan(ov); renderTrades(ov);
   renderIntel(ov); renderTrend(ov); renderDirector(ov); renderHL(ov); renderCEX(ov); renderActivity(ov); renderControls(ov); renderFooter(ov);
 }
 function renderTop(ov) {
@@ -249,8 +273,36 @@ function renderOperator(ov) {
    <div><div class="small mute" style="margin-bottom:4px">hallazgos de la última revisión</div>${(o.findings || []).length ? h`<div class="feed" style="max-height:220px">${o.findings.map(f => h`<div class="row"><span class="badge ${LV[f.level] || ''}">${f.level}</span><span class="m">${f.msg}</span></div>`)}</div>` : h`<div class="empty">ninguno</div>`}</div>
    <div><div class="small mute" style="margin-bottom:4px">acciones tomadas (solo las seguras: rent de ATAs, procesos colgados, Director, logs)</div>${(o.actions || []).length ? h`<div class="feed" style="max-height:220px">${o.actions.map(a => h`<div class="row"><span class="badge ${a.dry_run ? 'warn' : 'blue'}">${a.action}</span><span class="m">${a.detail}</span></div>`)}</div>` : h`<div class="empty">ninguna</div>`}
     <div class="small mute" style="margin-top:6px">informe diario: ${o.last_daily || '—'} · último cierre de ATAs: ${isNum(o.last_ata) ? dhm(o.last_ata) : 'nunca'}</div></div>
-   <div><div class="small mute" style="margin-bottom:4px">resumen</div><div class="kv small">${['legs', 'scan', 'funnel', 'director', 'brain', 'copytrade', 'hl'].filter(k => sm[k]).map(k => h`<span class="k">${k}</span><span>${Array.isArray(sm[k]) ? sm[k].join(' · ') : String(sm[k])}</span>`)}</div>
+   <div><div class="small mute" style="margin-bottom:4px">resumen</div><div class="kv small">${['legs', 'scan', 'funnel', 'market', 'director', 'brain', 'copytrade', 'hl'].filter(k => sm[k]).map(k => h`<span class="k">${k === 'market' ? 'mercado' : k}</span><span>${Array.isArray(sm[k]) ? sm[k].join(' · ') : String(sm[k])}</span>`)}</div>
     ${(o.alerts || []).length ? h`<div class="small mute" style="margin:8px 0 4px">alertas recientes</div><div class="feed" style="max-height:140px">${o.alerts.map(a => h`<div class="row"><span class="t">${dhm(a.t)}</span><span class="badge ${LV[a.level] || ''}">${a.level}</span><span class="m">${a.msg}</span></div>`)}</div>` : ''}</div></div>`);
+}
+function renderContext(ov) { // data/context_now.json (context.py, hourly) + the sol.r1h history from data/context.jsonl when dash_data could read it
+  const c = ov.context; set('cx-badge', badge(c));
+  if (!ok(c)) { set('cx-meta', ''); set('cx-body', h`<div class="empty">sin data/context_now.json (context.py corre cada hora desde run_forever.sh)</div>`); return; }
+  const sol = c.sol || {}, btc = c.btc || {}, nw = c.news || {}, mk = c.market || {}, br = c.breadth || {}, rg = c.regime || {}, hl = c.hl || {}, he = c.health || {}, stale = Array.isArray(c.stale) ? c.stale : [];
+  const yn = v => v === true ? 'sí' : v === false ? 'no' : '—', TR = {up: ['▲ alcista', 'pos'], down: ['▼ bajista', 'neg'], flat: ['→ plano', '']}, HT = {hot: ['🔥 caliente', 'pos'], normal: ['● normal', ''], cold: ['❄ frío', 'neg']};
+  const tl = (l, v, s, cls) => h`<div class="tl"><div class="l">${l}</div><div class="v ${cls || ''}">${v}</div><div class="s">${s}</div></div>`;
+  const tr = TR[rg.sol_trend] || ['—', ''], ht = HT[mk.heat] || ['—', ''];
+  const amp = isNum(br.n_entry) && isNum(br.n_universe) && br.n_universe > 0 ? num(100 * br.n_entry / br.n_universe, 0) + ' %' : isNum(br.share) ? num(br.share * (br.share <= 1 ? 100 : 1), 0) + ' %' : '—';
+  set('cx-meta', h`${isNum(c.hour_utc) ? c.hour_utc + ':00 UTC' : ''}${isNum(c.dow) && DOW[c.dow] ? ' · ' + DOW[c.dow] : ''} · ${hm(c.ts)}`);
+  set('cx-body', h`<div class="tiles">
+   ${tl('SOL 24 h', pct(sol.r24h, 1), h`1 h ${pct(sol.r1h, 1)} · 4 h ${pct(sol.r4h, 1)}${isNum(sol.usd) ? ' · ' + usd(sol.usd, 0) : ''}`, pol(sol.r24h))}
+   ${tl('Tendencia SOL', tr[0], h`volatilidad 24 h ${isNum(sol.rv24h) ? num(sol.rv24h, 2) + ' %' : '—'}`, tr[1])}
+   ${tl('BTC', rg.btc_on === true ? h`<span class="badge good">● on</span>` : rg.btc_on === false ? h`<span class="badge crit">○ off</span>` : '—', h`${btc.regime || '—'}${isNum(btc.regime_age_s) ? ' desde hace ' + ageTxt(btc.regime_age_s) : ''} · 24 h ${pct(btc.r24h, 1)}`)}
+   ${tl('Miedo y codicia', isNum(nw.fng) ? num(nw.fng, 0) : '—', h`noticias ${isNum(nw.age_s) ? 'hace ' + ageTxt(nw.age_s) : '—'} · ${nw.sources_ok ?? '—'} fuentes`, isNum(nw.fng) ? (nw.fng <= 25 ? 'neg' : nw.fng >= 75 ? 'pos' : '') : '')}
+   ${tl('Riesgo-off', nw.risk_off === true ? '⛔ sí' : nw.risk_off === false ? '✅ no' : '—', h`sentimiento ${isNum(nw.sentiment) ? sgn(nw.sentiment, 2) : '—'}${isNum(c.riskoff_6h) ? h` · ${c.riskoff_6h}/${c.riskoff_6h_n} últimas h` : ''}`, nw.risk_off === true ? 'neg' : '')}
+   ${tl('Calor del mercado', ht[0], h`ratio ${isNum(mk.heat_ratio) ? '×' + num(mk.heat_ratio, 2) : '—'} · vol. 1 h ${isNum(mk.agg_vol_h1_usd) ? usd(mk.agg_vol_h1_usd, 0) : '—'}`, ht[1])}
+   ${tl('Lanzamientos / h', isNum(mk.new_pools_1h) ? num(mk.new_pools_1h, 0) : '—', h`graduaciones ${mk.graduations_1h ?? '—'} · candidatos ${mk.n_cands_1h ?? '—'}`)}
+   ${tl('Amplitud', amp, h`${br.n_entry ?? '—'} de ${br.n_universe ?? '—'} en entrada · ATR mediana ${isNum(br.med_atr_ratio) ? '×' + num(br.med_atr_ratio, 2) : '—'}`)}
+  </div>
+  <div class="small mute" style="margin-top:8px;display:flex;gap:6px 14px;flex-wrap:wrap;align-items:center">
+   <span>Hyperliquid: sesgo SOL ${isNum(hl.sol_bias) ? sgn(hl.sol_bias, 2) : '—'} · BTC ${isNum(hl.btc_bias) ? sgn(hl.btc_bias, 2) : '—'} · estrés ${hl.stress || '—'}</span>
+   <span>salud: insider ${isNum(he.insider_age_s) ? 'hace ' + ageTxt(he.insider_age_s) : '—'} · ST ${he.st_budget_used ?? '—'}/${he.st_budget_cap ?? '—'} · X ${isNum(he.x_buzz_age_s) ? 'hace ' + ageTxt(he.x_buzz_age_s) : '—'} · cerebro activo ${yn(he.brain_active)} · Director sombra ${yn(he.director_shadow)}</span>
+   ${stale.length ? h`<span class="badge warn">⚠ sin calcular: ${stale.join(', ')}</span>` : ''}
+   <span id="cx-spark" style="display:inline-flex;align-items:center;gap:6px"></span>
+  </div>`);
+  const pts = (c.history || []).filter(r => isNum(r.ts) && isNum(r.r1h)).map(r => [r.ts * 1000, r.r1h]);
+  set('cx-spark', pts.length >= 2 ? h`<span>SOL 1 h · ${pts.length} h</span>${sparkPct(pts, 160, 'SOL retorno 1 h')}` : '');
 }
 function renderEquity(ov) {
   const ec = ov.solana && ov.solana.equity_curve; set('eq-badge', badge(ec));
@@ -310,7 +362,10 @@ function renderIntel(ov) {
   const ins = ov.insider, ct = ov.copytrade, br = ov.solana && ov.solana.brain; set('ins-badge', badge(ins)); set('ct-badge', badge(ct)); set('br-badge', badge(br));
   set('ins-body', !ok(ins) ? h`<div class="empty">sin insider_status.json</div>` : h`<div class="kv"><span class="k">carteras</span><span><b>${ins.tracked ?? '—'}</b> seguidas · ${ins.live_ranked ?? '—'} con actividad</span><span class="k">ciclo</span><span>${isNum(ins.cycle_s) ? num(ins.cycle_s, 0) + ' s' : '—'}</span><span class="k">tiempo real</span><span>${ins.ws ? (ins.ws.state === 'connected' && ins.ws.age_s < 120 ? h`<span class="badge good">● socket</span> ${ins.ws.subs ?? 0} wallets · ${ins.ws.events ?? 0} eventos` : h`<span class="badge warn">○ ${ins.ws.state}</span> sondeo RPC`) : h`<span class="mute">sondeo RPC (sin insider_ws)</span>`}</span></div>
    <div class="small mute" style="margin-top:8px">convergencia (top)</div>${(ins.conv || []).length ? h`<table><tbody>${ins.conv.map(c => h`<tr><td><code>${c.mint_short}</code></td><td class="n">score ${num(c.score, 1)}</td><td class="n">${c.n ?? 0} w · ${c.elite ?? 0} élite</td></tr>`)}</tbody></table>` : h`<div class="empty">sin convergencia</div>`}
-   <div class="small mute" style="margin-top:8px">alertas recientes</div>${(ins.alerts || []).length ? h`<div class="feed">${ins.alerts.slice(0, 6).map(a => h`<div class="row"><span class="t">${hm(a.t)}</span><span class="m"><code>${a.mint_short}</code> élite ${a.elite ?? 0} · ${a.n ?? 0} w · score ${num(a.score, 1)}</span></div>`)}</div>` : h`<div class="empty">ninguna</div>`}`);
+   <div class="small mute" style="margin-top:8px">alertas recientes</div>${(ins.alerts || []).length ? h`<div class="feed">${ins.alerts.slice(0, 6).map(a => h`<div class="row"><span class="t">${hm(a.t)}</span><span class="m"><code>${a.mint_short}</code> élite ${a.elite ?? 0} · ${a.n ?? 0} w · score ${num(a.score, 1)}</span></div>`)}</div>` : h`<div class="empty">ninguna</div>`}
+   <div class="small mute" style="margin-top:8px">ranking de wallets (insider_rank.py) ${badge(ins.rank)}${ok(ins.rank) ? h` · élite ${(ins.rank.tiers || {}).elite ?? '—'} · buenas ${(ins.rank.tiers || {}).good ?? '—'} · vigiladas ${(ins.rank.tiers || {}).watch ?? '—'} · ${ins.rank.n_wallets ?? 0} puntuadas (${ins.rank.n_bots ?? 0} bots) · ${ins.rank.n_launches ?? '—'} lanzamientos` : ''}</div>
+   ${(ins.wallets || []).length ? h`<div class="scroll"><table><thead><tr><th>wallet</th><th>nivel</th><th class="n" title="percentil 20 de la tasa de acierto con decaimiento">fiab.</th><th class="n" title="aciertos / fallos">✓/✗</th><th class="n" title="cuota de lanzamientos minados en los que entró">part.</th><th class="n" title="validación en vivo: n · aciertos · media 1 h">vivo</th><th class="n" title="win % (Solana Tracker)">PnL</th></tr></thead><tbody>${ins.wallets.map(w => h`<tr><td><code>${w.addr_short}</code>${w.bot === true ? h` <span class="badge warn" title="${w.bot_why || 'bot'}">bot</span>` : ''}${w.cluster ? h` <span class="mute small">${w.cluster}</span>` : ''}</td><td>${tierBadge(w.tier)}</td><td class="n">${isNum(w.rel) ? num(w.rel * 100, 0) + ' %' : '—'}</td><td class="n">${w.h ?? '—'}/${w.m ?? '—'}</td><td class="n">${isNum(w.part) ? num(w.part * 100, 1) + ' %' : '—'}</td><td class="n small">${w.live_n ?? '—'} · ${w.live_hit ?? '—'}${isNum(w.live_mean) ? ' · ' + sgn(w.live_mean, 1) : ''}</td><td class="n">${isNum(w.pnl_win_pct) ? num(w.pnl_win_pct, 0) + ' %' : '—'}</td></tr>`)}</tbody></table></div>` : h`<div class="empty">${ok(ins.rank) ? 'sin wallets puntuadas' : 'sin insider_rank.json'}</div>`}
+   <div class="small mute" style="margin-top:4px">${[isNum(ins.rank_t) ? 'ranking ' + hm(ins.rank_t) : '', isNum(ins.rpc_err_n) ? 'errores RPC ' + num(ins.rpc_err_n, 0) : '', ins.rotation_slice != null ? 'rotación ' + fmtAny(ins.rotation_slice) : '', ins.tracked_by_tier && Object.keys(ins.tracked_by_tier).length ? 'seguidas por nivel ' + Object.entries(ins.tracked_by_tier).map(([k, v]) => k + ' ' + v).join(' / ') : '', isNum(ins.sells_n_total) ? 'ventas vigiladas ' + num(ins.sells_n_total, 0) : ''].filter(Boolean).join(' · ')}</div>`);
   set('ct-body', !ok(ct) ? h`<div class="empty">sin estado de copytrade</div>` : h`<div class="hero ${pol(ct.pnl)}">${sgn(ct.pnl)} $</div><div class="kv"><span class="k">cerradas</span><span>${ct.closed ?? 0} · acierto ${isNum(ct.win_rate) ? num(ct.win_rate * (ct.win_rate <= 1 ? 100 : 1), 0) + ' %' : '—'} (${ct.wins ?? 0} ganadas)</span>
    <span class="k">abiertas</span><span>${(ct.open || []).length ? ct.open.map((o, i) => h`${i ? ' · ' : ''}<b>${o.sym}</b> @ ${price(o.e)}${o.rug_n ? h` <span class="badge warn">rug ${o.rug_n}</span>` : ''}`) : 'ninguna'}</span></div>
    <div class="small mute" style="margin-top:8px">últimas</div><div class="feed" style="max-height:160px">${(ct.recent || []).slice(0, 8).map(r => h`<div class="row"><span class="t">${dhm(r.time)}</span><span class="m"><b>${r.symbol}</b> ${r.side} ${isNum(r.pnl) && String(r.side).toUpperCase() !== 'BUY' ? h`<span class="${pol(r.pnl)}">${sgn(r.pnl, 3)} $</span>` : ''} <span class="mute">${r.reason || ''}</span></span></div>`)}</div>`);
@@ -318,6 +373,11 @@ function renderIntel(ov) {
   set('br-body', !ok(br) ? h`<div class="empty">sin estado del cerebro</div>` : h`<div class="kv"><span class="k">modo</span><span>${br.active ? h`<span class="badge good">● activo</span>` : h`<span class="badge">○ sombra</span>`} · base ${isNum(br.base) ? num(br.base) : '—'}</span>
    <span class="k">etiquetados</span><span>${br.n_labelled ?? '—'} de ${br.n ?? '—'}</span><span class="k">actualizado</span><span>${dhm(br.updated)}</span>
    <span class="k">media gan./pérd.</span><span><span class="pos">${isNum(br.avg_win) ? '+' + num(br.avg_win * 100, 1) + ' %' : '—'}</span> / <span class="neg">${isNum(br.avg_loss) ? '−' + num(Math.abs(br.avg_loss) * 100, 1) + ' %' : '—'}</span></span>
+   <span class="k">modelo</span><span>${br.model_choice || h`<span class="mute">sin model_choice</span>`}${br.code_version ? h` · código <code>${br.code_version}</code>` : h` · <span class="badge warn">sin code_version</span>`}${isNum(br.lambda) ? ' · λ ' + num(br.lambda, 3) : ''}${isNum(br.archive_n) ? ' · archivo ' + num(br.archive_n, 0) : ''}</span>
+   ${isNum(br.folds_n) ? h`<span class="k">folds</span><span>${br.folds_n}${isNum(br.folds_pos) ? ` · ${br.folds_pos} positivos` : ''}${isNum(br.folds_mean_ret) ? ' · media ' + pct(br.folds_mean_ret, 2) : ''}</span>` : ''}
+   ${isNum(br.models_hist_n) ? h`<span class="k">modelos</span><span>${br.models_hist_n} reajustes · ${br.models_hist_flips ?? 0} cambios${br.models_hist_last ? ' · último ' + br.models_hist_last : ''}</span>` : ''}
+   ${isNum(br.code_newer_s) && br.code_newer_s > 86400 ? h`<span class="k">código</span><span><span class="badge warn">⚠ brain.py es ${ageTxt(br.code_newer_s)} más nuevo que el estado</span></span>` : ''}
+   ${(br.calibration || []).length ? h`<span class="k">calibración</span><span class="small">${br.calibration.map((b, i) => h`${i ? ' · ' : ''}${b.bin}: p ${num(b.p_avg, 2)} / real ${num(b.win_rate, 2)} (n ${b.n ?? '—'})`)}</span>` : ''}
    ${oos ? h`<span class="k">OOS</span><span class="small">${Object.entries(oos).slice(0, 8).map(([k, v], i) => h`${i ? ' · ' : ''}${k} ${isNum(v) ? anyNum(v) : typeof v === 'object' ? JSON.stringify(v).slice(0, 60) : String(v)}`)}</span>` : ''}</div>
    <div class="small mute" style="margin-top:8px">decisiones recientes</div>${(br.decisions || []).length ? h`<div class="feed" style="max-height:160px">${br.decisions.slice(0, 8).map(d => h`<div class="row"><span class="t">${hm(d.t ?? d.ts)}</span><span class="m">${typeof d === 'string' ? d : h`<b>${d.sym ?? ''}</b> ${'pass' in d ? (d.pass ? h`<span class="badge good">✔ pasa</span>` : h`<span class="badge warn">✖ veto</span>`) : (d.decision ?? '')} ${isNum(d.score) ? 'score ' + num(d.score, 0) : ''} ${isNum(d.p) ? 'p=' + num(d.p, 2) : ''} ${isNum(d.ev_pct) ? 'EV ' + sgn(d.ev_pct, 1) + ' %' : ''} <span class="mute">${d.fail || d.why || d.reason || ''}${d.narr ? ' · ' + d.narr : ''}</span>`}</span></div>`)}</div>` : h`<div class="empty">ninguna en el estado</div>`}`);
 }
@@ -335,7 +395,7 @@ function renderTrend(ov) {
 function renderDirector(ov) {
   const d = ov.director; set('dir-badge', badge(d));
   if (!ok(d)) { set('dir-mode', ''); set('dir-body', h`<div class="empty">sin director_state.json (el Director aún no ha corrido en esta máquina)</div>`); return; }
-  const e = d.evidence || {}, sp = d.size_policy || {}, ep = d.exit_profile || {}, P = d.plays || {}, PW = d.plays_why || {}, PE = e.plays || {};
+  const e = d.evidence || {}, sp = d.size_policy || {}, ep = d.exit_profile || {}, P = d.plays || {}, PW = d.plays_why || {}, PE = e.plays || {}, RG = d.regime_gate && typeof d.regime_gate === 'object' ? d.regime_gate : null;
   set('dir-mode', d.shadow ? h`<span class="badge warn">○ sombra: calcula y registra, no manda</span>` : h`<span class="badge good">● manda (solo endurece)</span>`);
   const playBadge = v => v === 'on' ? h`<span class="badge good">on</span>` : v === 'paper' ? h`<span class="badge">papel</span>` : h`<span class="badge crit">off</span>`;
   const hours = d.windows || [], closed = []; for (let i = 0; i < 24; i++) if (!hours.includes(i)) closed.push(i);
@@ -344,10 +404,12 @@ function renderDirector(ov) {
     <span class="k">coste fijo</span><span>${isNum(e.fixed_cost_usd) ? usd(e.fixed_cost_usd, 3) : '—'} por operación ${isNum(sp.fixed_share) ? h`(${num(sp.fixed_share * 100, 2)} % de la posición)` : ''} · prob. rent perdido ${isNum(e.rent_lost_prob) ? num(e.rent_lost_prob * 100, 0) + ' %' : '—'}</span>
     <span class="k">umbrales</span><span>score ≥ ${isNum(d.min_score_eff) ? num(d.min_score_eff, 0) : '—'} · EV ≥ ${isNum(d.ev_min_eff) ? num(d.ev_min_eff * 100, 2) + ' %' : '—'} · máx ${d.max_trades_day ?? '—'} op/día</span>
     <span class="k">salida</span><span>stop −${isNum(ep.hard_stop_pct) ? num(ep.hard_stop_pct, 0) : '—'} % · trail ${isNum(ep.trail_pct) ? num(ep.trail_pct, 0) : '—'} % <span class="mute small">${ep.why || ''}</span></span>
-    <span class="k">horas</span><span>${hours.length}/24 permitidas${closed.length ? h` <span class="mute small">(cerradas: ${closed.join(', ')} h)</span>` : ''}${isNum(e.dataset_rows) ? h` <span class="mute small">· dataset ${num(e.dataset_rows, 0)} filas</span>` : ''}</span></div>
+    <span class="k">horas</span><span>${hours.length}/24 permitidas${closed.length ? h` <span class="mute small">(cerradas: ${closed.join(', ')} h)</span>` : ''}${isNum(e.dataset_rows) ? h` <span class="mute small">· dataset ${num(e.dataset_rows, 0)} filas</span>` : ''}</span>
+    <span class="k" title="puerta de régimen: valores de cada dimensión con los que el Director cierra las entradas">régimen</span><span>${RG && Object.keys(RG).length ? h`${Object.entries(RG).filter(([k]) => k !== 'why').map(([k, v], i) => h`${i ? ' · ' : ''}<b>${k}</b> ${fmtAny(v)}`)}${RG.why ? h` <span class="mute small">${fmtAny(RG.why)}</span>` : ''}` : h`<span class="mute">sin puerta de régimen${isNum(d.version) ? ' (estado v' + d.version + ')' : ''}</span>`}</span></div>
    <div><div class="small mute" style="margin-bottom:4px">jugadas (evidencia 14 días, real + papel)</div><table><thead><tr><th>jugada</th><th>estado</th><th class="n">real n / PF / exp</th><th class="n">papel n / PF / exp</th></tr></thead><tbody>
     ${Object.keys(P).map(k => { const v = PE[k] || {}; return h`<tr><td><b>${k}</b></td><td>${playBadge(P[k])}</td><td class="n small">${v.real_n ?? 0} / ${isNum(v.real_pf) ? num(v.real_pf) : '—'} / ${isNum(v.real_exp) ? pct(v.real_exp, 1) : '—'}</td><td class="n small">${v.paper_n ?? 0} / ${isNum(v.paper_pf) ? num(v.paper_pf) : '—'} / ${isNum(v.paper_exp) ? pct(v.paper_exp, 1) : '—'}</td></tr>`; })}</tbody></table>
-    <div class="small mute" style="margin-top:6px">${Object.keys(PW).map(k => h`<div>${k}: ${PW[k]}</div>`)}</div></div>
+    <div class="small mute" style="margin-top:6px">${Object.keys(PW).map(k => h`<div>${k}: ${PW[k]}</div>`)}</div>
+    ${d.regime_table != null ? h`<div class="small mute" style="margin:8px 0 4px">evidencia por régimen (director_state.evidence.regime)</div>${genericTable(d.regime_table, 'sin tabla de régimen')}` : ''}</div>
    <div><div class="small mute" style="margin-bottom:4px">últimas decisiones</div>${(d.log || []).length ? h`<div class="feed" style="max-height:200px">${d.log.map(l => h`<div class="row"><span class="t">${dhm(l.t)}</span><span class="m">${l.shadow ? h`<span class="badge warn">sombra</span> ` : ''}${l.changes.length ? l.changes.map(c => h`<div><b>${c.key}</b>: ${typeof c.before === 'object' ? JSON.stringify(c.before) : String(c.before ?? '—')} → ${typeof c.after === 'object' ? JSON.stringify(c.after) : String(c.after ?? '—')}</div>`) : h`<span class="mute">sin cambios</span>`} <div class="mute small">${l.summary}</div></span></div>`)}</div>` : h`<div class="empty">sin registro</div>`}</div></div>`);
 }
 function renderHL(ov) {
@@ -396,7 +458,7 @@ function renderControls(ov) {
    ${(hs.supervisor_tail || []).length ? h`<div class="small mute" style="margin-top:10px">supervisor.log</div><pre>${hs.supervisor_tail.join('\n')}</pre>` : ''}`);
 }
 function renderFooter(ov) {
-  const s = ov.solana || {}, th = [['estado', s], ['curva', s.equity_curve], ['candidatos', s.funnel], ['cerebro', s.brain], ['insider', ov.insider], ['copytrade', ov.copytrade], ['riesgo HL', ov.hl], ['director', ov.director], ['operador', ov.operator], ['tendencia', ov.trend]]
+  const s = ov.solana || {}, th = [['estado', s], ['curva', s.equity_curve], ['candidatos', s.funnel], ['cerebro', s.brain], ['insider', ov.insider], ['ranking insiders', ov.insider && ov.insider.rank], ['copytrade', ov.copytrade], ['riesgo HL', ov.hl], ['director', ov.director], ['operador', ov.operator], ['tendencia', ov.trend], ['contexto', ov.context]]
     .filter(([, x]) => x && isNum(x.fresh_after_s)).map(([n, x]) => `${n} ${ageTxt(x.fresh_after_s)}`);
   set('footer', h`Datos del propio bot (ficheros de estado en ${(ov.meta || {}).host || 'la máquina'}); ningún valor se calcula fuera de la máquina. Umbrales de frescura: ${th.join(' · ') || '—'}.`);
 }
