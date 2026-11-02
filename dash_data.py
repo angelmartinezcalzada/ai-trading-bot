@@ -395,7 +395,7 @@ def _brain(root, now, st, status_fresh):
              models_hist_last=labs[-1] if labs else None,
              calibration=[{"bin": _s(b.get("bin"), 12), "n": _i(b.get("n"), None), "p_avg": _f(b.get("p_avg")), "win_rate": _f(b.get("win_rate"))} for b in cal if isinstance(b, dict)][:10] if cal is not None else None,
              updated_ts=ut, code_mtime=cm, code_newer_s=round(cm - ut, 1) if (cm is not None and ut is not None) else None)
-    h["lambda"] = _f(m.get("lambda"))
+    lam = m.get("lambda"); h["lambda"] = _f(lam.get("logit")) if isinstance(lam, dict) else _f(lam); h["lambda_ridge"] = _f(lam.get("ridge")) if isinstance(lam, dict) else None   # brain v3 writes {logit, ridge}
     return h
 
 

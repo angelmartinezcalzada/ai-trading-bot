@@ -335,3 +335,26 @@ def test_training_rows_carry_ctx_and_hour_utc_for_the_director():
     assert all(r["ctx"]["sol_trend"] == "down" and r["hour_utc"] == 5 for r in rows)
     gate, info = director.regime_from_data(rows, {}, min_n=10, min_rows=12)
     assert "sol_trend" in gate and "down" not in gate["sol_trend"] and "down" in info["closed"]["sol_trend"]   # 12 rows, mean -5 % -> 'down' closed
+
+
+def test_decide_stores_the_scored_vector_and_the_archive_reuses_it():
+    """train/serve skew (02-nov review): the archived x is the vector decide() scored, not a recomputation on the enriched row"""
+    b = brain.Brain(); rec = {"score": 50, "liq": 120000, "parts": {"parts": {"buy_press": 6}, "age_h": 5, "vol_liq": 2.1, "h1": 10, "m5": 1, "b_s": "120/80"}, "rug": {"top10": 12.5, "holders": 8000}}
+    d = b.decide(rec, 100.0, {"position_pct": 0.05}); assert d is not None and isinstance(rec.get("x_dec"), dict) and rec["x_dec"]["cx"] in (None, {}) or isinstance(rec["x_dec"]["cx"], dict)
+    later = dict(rec, st_f={"snipers_pct": 2.0, "holders": 8000}, roundtrip_loss_pct=1.2, ctx={"hour_utc": 3, "sol_trend": "up"})   # fields attached AFTER decide
+    assert later["x_dec"] == rec["x_dec"] and brain.xraw(later) != rec["x_dec"]                                        # the enriched row would differ: the archive must take x_dec
+
+
+def test_local_n_vectorised_matches_the_python_loop():
+    keys = ["a", "b", "c", "d"]; rows = [0b0000, 0b0001, 0b0011, 0b0111, 0b1111, 0b1000]
+    st = {"keys": keys, "bool_rows": rows}
+    for S in ({"a": True}, {"a": True, "b": True, "c": True, "d": True}, {}):
+        b = brain._bits(S, keys); ref = max(brain.LOCAL_MIN_N, sum(1 for r in rows if bin(b ^ r).count("1") <= brain.LOCAL_HAMMING))
+        assert brain.Brain.local_n(S, st) == ref
+
+
+def test_training_rows_drop_rows_older_than_the_age_cap():
+    now = 1_800_000_000.0
+    arch = [{"rid": "M:1", "t": now - 100 * 86400, "S": {}, "x": {}, "ret": 0.1, "score": 50, "mint": "M", "cfg_hash": "h"},
+            {"rid": "M:2", "t": now - 10 * 86400, "S": {}, "x": {}, "ret": 0.1, "score": 50, "mint": "M", "cfg_hash": "h"}]
+    assert [r["rid"] for r in brain._training_rows(arch, "h", now)] == ["M:2"]

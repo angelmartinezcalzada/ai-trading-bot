@@ -69,7 +69,7 @@ def write_rank(d, now, status_extra=True):
 
 def brain_v3(now):
     return {"updated": "2026-11-02T10:00:00", "n_labelled": 900, "n": 900, "active": False, "base": 0.4, "weights": {}, "avg_win": 0.12, "avg_loss": 0.07,
-            "code_version": "brain/3", "model_choice": "logit", "lambda": 0.5, "archive_n": 12,
+            "code_version": "brain/3", "model_choice": "logit", "lambda": {"logit": 0.5, "ridge": 2.0}, "archive_n": 12,
             "folds": [{"n_train": 500, "n_test": 100, "avg_ret_%": 1.2, "brier": 0.21}, {"n_train": 600, "n_test": 100, "avg_ret_%": -0.4, "brier": 0.24},
                       {"n_train": 700, "n_test": 100, "avg_ret_%": 0.8, "brier": 0.22}, {"n_train": 800, "n_test": 100, "brier": 0.23}],
             "oos": {"n_test": 215, "brain_trades": 30, "brain_avg_ret_%": 0.9, "models_hist": ["beta", "beta", "logit", "beta", "beta"]},
@@ -468,7 +468,7 @@ def test_brain_v3_fields_and_code_age(tmp_path):
     d = str(tmp_path); now = time.time(); make_empty(d); os.makedirs(os.path.join(d, "data"))
     json.dump(brain_v3(now), open(os.path.join(d, "data", "brain_state.json"), "w"))
     b = dash_data.build_overview(d, now)["solana"]["brain"]
-    assert b["available"] and b["model_choice"] == "logit" and b["code_version"] == "brain/3" and b["lambda"] == 0.5 and b["archive_n"] == 12
+    assert b["available"] and b["model_choice"] == "logit" and b["code_version"] == "brain/3" and b["lambda"] == 0.5 and b["lambda_ridge"] == 2.0 and b["archive_n"] == 12
     assert b["folds_n"] == 4 and b["folds_pos"] == 2 and b["folds_mean_ret"] == pytest.approx((1.2 - 0.4 + 0.8) / 3, abs=1e-3) and len(b["folds"]) == 4
     assert b["models_hist_n"] == 5 and b["models_hist_flips"] == 2 and b["models_hist_last"] == "beta"
     assert len(b["calibration"]) == 3 and b["calibration"][1] == {"bin": "20-40%", "n": 90, "p_avg": 0.3, "win_rate": 0.28}

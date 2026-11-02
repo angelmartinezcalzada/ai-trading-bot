@@ -976,3 +976,13 @@ Backups: memebot.py / copytrade_paper.py / config.json / DECISIONS.md .bak_rugpu
 - Bajo, corregido: reserva explícita del cupo de Solana Tracker para el bot (BOT_RESERVE 200/día; daemon e insider paran antes). Bajo, corregido: director_cycle reconstruía el dataset con la configuración endurecida y sin cfg_base; ahora usa la base.
 - Pendientes de las otras tres lentes (integración, E/S y secretos, estadística): se aplicarán al terminar su verificación.
 - Tests: 260.
+
+## 2026-11-02 16:23 (Madrid) — Revisión adversarial completa (4 lentes, 15 agentes): 7 hallazgos confirmados, todos corregidos (Claude)
+- Alto, corregido (estadística): desfase entrenamiento/servicio del cerebro v3: decide() puntuaba un vector sin contexto, sin rasgos de Solana Tracker ni coste medido (se adjuntaban después), mientras el archivo y la validación usaban la fila completa. Ahora el sello de contexto se hace ANTES de decidir y decide() guarda el vector exacto que puntuó (`x_dec`), que es el que se archiva: lo validado fuera de muestra es lo que opera. Test de regresión.
+- Medio, corregido: la puerta "cerebro activo" comparaba brain_min_score con la puntuación ya subida por bonos X/ST (hasta +9 puntos no validados); ahora compara score_brain. Test.
+- Medio, corregido: el modelo ridge se ajustaba con retornos recortados en −30 %, ignorando la cola de rugs en su EV; ahora conserva toda la bajada.
+- Medio→bajo, corregido: ventanas horarias y puerta de régimen abrían los valores con < 10 filas aunque el conjunto fuera negativo (solo quedaban operables los regímenes menos medidos); ahora un valor poco medido hereda el veredicto agregado (abierto solo si la media agregada ≥ 0). Tests.
+- Medio, corregido: el panel no mostraba archivo/cortes/lambda con el bot vivo (status sin esas claves; lambda es un dict logit/ridge). Ahora el status las lleva y el panel las lee.
+- Medio, corregido (E/S y secretos): insider_ws_status.json guardaba la URL completa del WebSocket (puede llevar clave de RPC) y no estaba en .gitignore; ahora solo el host, el error solo por tipo, y .gitignore cubre insider_ws_status.json, insider_ws_queue.jsonl y data/st_cache.json.
+- Medio→bajo, corregido (rendimiento): local_n era O(n) en Python por predicción (92 s por aprendizaje a 12k filas); ahora popcount vectorizado con numpy; filas de más de 60 días fuera del entrenamiento; nunca dos aprendizajes a la vez; ficheros temporales con nombre único.
+- Tests: 266.

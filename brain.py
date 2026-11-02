@@ -14,7 +14,7 @@
            and be positive on EVERY fold; a vote counts only with >= VOTE_NEW_ROWS new archived rows since the last counted vote;
            HYSTERESIS consecutive counted votes activate, ONE failing refit deactivates; a model switch needs SWITCH_WINS consecutive
            OOS wins. Nothing here places an order: memebot reads decide() and applies its own vetoes, floors and caps."""
-import json, os, time, math, re, datetime as dt, collections, hashlib, requests, logging
+import json, threading, os, time, math, re, datetime as dt, collections, hashlib, requests, logging
 try: import numpy as np
 except Exception: np = None   # the linear models are optional; without numpy the Beta model runs alone
 from eval_solana import sim, get
@@ -31,7 +31,8 @@ SIM_KEYS = EXIT_KEYS + ("stop_pct", "max_stop_pct", "trail_pct", "runner_trail_p
 HALF_LIFE_D, MAX_ROWS_MINT, MISMATCH_W = 10, 30, 0.5
 FOLD_CUTS, EMBARGO_S, EPISODE_GAP_S, FOLD_MIN_TRAIN, FOLD_MIN_TEST = (0.5, 0.6, 0.7), 3*3600, 3*3600, 30, 10
 VOTE_NEW_ROWS, SWITCH_WINS, MODELS_HIST, MODELS = 25, 2, 10, ("beta", "logit", "ridge")
-LAMBDAS, LOCAL_HAMMING, LOCAL_MIN_N, RET_CLIP = (2.0, 5.0, 10.0, 20.0), 2, 5, (-0.30, 1.00)
+LAMBDAS, LOCAL_HAMMING, LOCAL_MIN_N, RET_CLIP = (2.0, 5.0, 10.0, 20.0), 2, 5, (-1.00, 1.00)   # 02-nov review: the ridge target keeps the whole rug tail (a -30 % clip inflated its EV)
+MAX_TRAIN_AGE_D = 60   # rows older than this (decay weight < 1/64) leave the training set: bounded hourly work
 DEFAULT_ST = {"active": False, "weights": {}, "base": 0.35, "avg_win": 0.15, "avg_loss": 0.08}
 RENAMED = {"insiders": "rc_insiders", "insider_conv": "insider_t1", "insider_elite": "insider_t2"}   # v2 -> v3 Beta signal names
 ST_F = ("snipers_pct", "bundlers_pct", "insiders_pct", "dev_pct", "holders", "migrated", "age_h", "creator_rugs")
@@ -40,7 +41,7 @@ XC = (["liq_log", "vol_liq", "h1", "m5", "age_log", "rt", "rt_missing", "top10",
       + [f"src_{i}" for i in range(6)] + [f"st_{k}" for k in ST_F] + [f"st_{k}_missing" for k in ST_F] + list(CTX_KEYS) + ["ctx_missing", "score"])
 WINSOR = {"liq_log", "vol_liq", "h1", "m5", "age_log", "rt", "top10", "holders_log", "ins", "buys", "score"} | {f"st_{k}" for k in ST_F}
 def _atomic_json(path, obj, **kw):
-    tmp = path + ".tmp"; json.dump(obj, open(tmp, "w"), **kw); os.replace(tmp, path)
+    tmp = f"{path}.{os.getpid()}.{threading.get_ident()}.tmp"; json.dump(obj, open(tmp, "w"), **kw); os.replace(tmp, path)   # unique per writer (no torn files)
 STOP = {"the","of","a","to","and","in","on","coin","token","sol","solana","inu","ai","x","by","for","is","it","pump","fun","usd","usdc","wif","meme"}
 def lo(p): p = min(0.99, max(0.01, p)); return math.log(p/(1-p))
 def sg(x): return 1/(1+math.exp(-x))
@@ -234,6 +235,7 @@ def _training_rows(arch, chash, now):
             if pd[day] >= MAX_ROWS_MINT_DAY: continue
             pd[day] += 1; keep.append(a)
         for a in keep[-MAX_ROWS_MINT:]:
+            if now-a["t"] > MAX_TRAIN_AGE_D*86400: continue   # bounded training set (decay weight < 1/64 anyway)
             w = 0.5**(max(0.0, now-a["t"])/(HALF_LIFE_D*86400))*(MISMATCH_W if a.get("cfg_hash") != chash else 1.0)
             out.append({"t": a["t"], "t_exit": a.get("t_exit", a["t"]), "S": a["S"], "x": a.get("x") or {}, "ret": a["ret"], "score": a.get("score"), "mint": m,
                         "w": round(w, 4), "cfg_hash": a.get("cfg_hash"), "rid": a["rid"], "pair": a.get("pair"), "rt": a.get("rt"),
@@ -276,6 +278,9 @@ def _migrate(st):
     for k, v in DEFAULT_ST.items(): st.setdefault(k, v)
     if "model_choice" in st and st["model_choice"] not in MODELS: st["model_choice"] = "beta"
     return st
+_POP8 = np.array([bin(i).count("1") for i in range(256)], dtype=np.int32); _ROWS_CACHE = {}   # local_n: byte popcount table + the uint64 view of bool_rows
+
+
 class Brain:
     signals = staticmethod(signals)
     def __init__(s, path="brain_state.json"):
@@ -335,7 +340,16 @@ class Brain:
         (min LOCAL_MIN_N); no stored rows -> the minimum (fail-closed)"""
         keys = st.get("keys") or (st.get("logit") or {}).get("keys") or []; rows = st.get("bool_rows") or []
         if not rows or not keys: return LOCAL_MIN_N
-        b = _bits(S, keys); return max(LOCAL_MIN_N, sum(1 for r in rows if bin(b ^ int(r)).count("1") <= LOCAL_HAMMING))
+        b = _bits(S, keys)
+        try:   # vectorised popcount (02-nov review: the Python loop was O(n) per call x thousands of calls per learn)
+            arr = _ROWS_CACHE.get(id(rows))
+            if arr is None or len(arr) != len(rows):
+                arr = np.array([int(r) for r in rows], dtype=np.uint64); _ROWS_CACHE.clear(); _ROWS_CACHE[id(rows)] = arr
+            x = arr ^ np.uint64(b); cnt = np.zeros(len(arr), dtype=np.int32)
+            for sh in range(0, 64, 8): cnt += _POP8[((x >> np.uint64(sh)) & np.uint64(0xFF)).astype(np.int64)]
+            return max(LOCAL_MIN_N, int((cnt <= LOCAL_HAMMING).sum()))
+        except Exception:
+            return max(LOCAL_MIN_N, sum(1 for r in rows if bin(b ^ int(r)).count("1") <= LOCAL_HAMMING))
     def _p_logit(s, S, score, st=None, x=None):
         """L2 logistic regression (numpy) on the booleans + continuous block -> (p, local n_eff); (None, 0) when not fitted"""
         st = st or s.st; L = st.get("logit")
@@ -374,6 +388,8 @@ class Brain:
         S = signals(rec)
         if S is None: return None
         st = s.st; score = score_brain(rec); x = xraw(rec); choice = st.get("model_choice", "beta"); model = "beta"
+        try: rec["x_dec"] = x   # 02-nov review: the archive must train on the vector decide() actually scored (no train/serve skew)
+        except Exception: pass
         p = n = None
         if choice in ("logit", "ridge"):
             p, n = s._p_logit(S, score, st, x)
@@ -448,7 +464,7 @@ class Brain:
             day = (r["mint"], int(r["_t"]//86400))
             if per_day[day] >= MAX_ROWS_MINT_DAY: continue       # cap AFTER labelling: an established token (144 sightings/day) must not define the base rate
             per_day[day] += 1
-            row = {"rid": r["_rid"], "t": r["_t"], "t_exit": info.get("t_exit", path[-1][0]), "mint": r["mint"], "pair": r["pair"], "S": S, "x": xraw(r), "ret": ret,
+            row = {"rid": r["_rid"], "t": r["_t"], "t_exit": info.get("t_exit", path[-1][0]), "mint": r["mint"], "pair": r["pair"], "S": S, "x": (r["x_dec"] if isinstance(r.get("x_dec"), dict) else xraw(r)), "ret": ret,
                    "exit": info.get("exit"), "rt": rt if rt is not None else 3.0, "rt_src": rt_src, "cfg_hash": chash, "code": CODE, "score": score_brain(r)}
             if isinstance(r.get("ctx"), dict): row["ctx"] = r["ctx"]
             if isinstance(r.get("st_f"), dict): row["st_f"] = r["st_f"]

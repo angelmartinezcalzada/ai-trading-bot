@@ -18,4 +18,4 @@ def test_no_key_neutral(monkeypatch, tmp_path):
     assert st.get("/tokens/x", "tokens", cache={}) is None
 def test_live_wiring_only_tightens():
     src = open(st.__file__.replace("solanatracker.py", "memebot.py")).read()
-    assert "_st.live_check" in src and "f.extend(stv)" in src and "f.clear" not in src.split("_st.live_check")[1].split("thr =")[0]
+    assert "_st.live_check" in src and "f.extend(stv)" in src and "f.clear" not in src.split("_st.live_check")[1].split("news_negative")[0]   # thr is computed before decide since 02-nov: the ST block ends at the news veto

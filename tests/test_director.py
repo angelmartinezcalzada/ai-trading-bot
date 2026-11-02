@@ -162,7 +162,9 @@ def test_row_hour_utc_and_windows_ignore_the_machine_timezone():
     try:
         assert time.localtime(t).tm_hour == 12 and D.row_hour_utc({"t": t}) == 3
         hours, table = D.windows_from_data([{"t": t + i, "ret": -0.02} for i in range(120)])
-        assert 3 not in hours and 12 in hours and table[3]["n"] == 120
+        assert 3 not in hours and hours == [] and table[3]["n"] == 120                      # pooled expectancy < 0: sparse hours closed too (02-nov)
+        hours, table = D.windows_from_data([{"t": t + i, "ret": 0.02} for i in range(120)])
+        assert 3 in hours and 12 in hours and table[3]["n"] == 120 and table[12]["n"] == 0   # UTC hour 3 (not local 12) is the measured one
         p = os.path.join(os.path.dirname(__file__), "..", "_tmp_ledger_test.csv")
         try:
             write_ledger(p, [["2026-10-31T12:05:00", "solana", "S", "SELL", "1", "3", "0", "0.1", "meme:trail", "48"]])
@@ -179,18 +181,22 @@ def regime_rows():
     t0 = calendar.timegm((2026, 10, 31, 12, 0, 0)); rows = []
     rows += [{"t": t0 + i, "ret": -0.03, "ctx": {"sol_trend": "down", "btc_on": True, "risk_off": None, "heat": None}} for i in range(40)]                       # flat ctx dict
     rows += [{"t": t0 + 100 + i, "ret": 0.02, "ctx": {"regime": {"sol_trend": "flat", "btc_on": False, "risk_off": (False if i < 5 else None), "heat": None}}} for i in range(60)]   # nested snapshot
-    rows += [{"t": t0 + 200 + i, "ret": -0.05, "ctx": {"sol_trend": "up"}} for i in range(8)]       # n < 10: insufficient evidence -> allowed
+    rows += [{"t": t0 + 200 + i, "ret": -0.05, "ctx": {"sol_trend": "up"}} for i in range(8)]       # n < 10: sparse -> inherits the key's pooled verdict (02-nov: pooled < 0 here -> closed)
     rows += [{"t": t0 + 300 + i, "ret": -0.01} for i in range(12)]                                    # no ctx at all -> 'na'
     return rows
 
 
 def test_regime_from_data_closes_negative_values_keeps_small_samples_open_and_never_allows_unknown():
     rows = regime_rows(); gate, info = D.regime_from_data(rows, BASE)
-    assert gate == {"sol_trend": ["up", "flat"], "btc_on": ["false"]}
-    assert info["closed"] == {"sol_trend": ["down"], "btc_on": ["true"]} and info["ungated"] == ["risk_off", "heat"]   # < 10 known rows -> no gate on that key
+    assert gate == {"sol_trend": ["flat"], "btc_on": ["false"]}                                                        # pooled sol_trend mean < 0 -> the sparse 'up' is closed too
+    assert info["closed"] == {"sol_trend": ["up", "down"], "btc_on": ["true"]} and info["ungated"] == ["risk_off", "heat"]   # < 10 known rows -> no gate on that key
+    rows2 = [dict(r) for r in rows]
+    for r in rows2:
+        if (r.get("ctx") or {}).get("regime", {}).get("sol_trend") == "flat": r["ret"] = 0.08                           # pooled >= 0 -> the sparse 'up' stays open
+    gate2, _ = D.regime_from_data(rows2, BASE); assert gate2["sol_trend"] == ["up", "flat"]
     assert "na" not in gate["sol_trend"] and info["table"]["sol_trend"]["na"] == {"n": 12, "avg_%": -1.0} and info["table"]["btc_on"]["true"]["n"] == 40
     assert info["table"]["risk_off"]["false"]["n"] == 5 and info["table"]["heat"] == {"na": {"n": 120, "avg_%": pytest.approx(-0.43, abs=0.01)}}
-    assert "2 claves" in info["note"] and "2 valores cerrados" in info["note"] and "risk_off, heat" in info["note"]
+    assert "2 claves" in info["note"] and "3 valores cerrados" in info["note"] and "risk_off, heat" in info["note"]
     assert D.regime_from_data(rows[:60], BASE)[0] == {} and D.regime_from_data(None, BASE)[0] == {} and "sin puerta" in D.regime_from_data([], BASE)[1]["note"]
     assert "down" in D.regime_from_data([dict(r, ret=0.0) for r in rows[:40]] + rows[40:], BASE)[0]["sol_trend"]      # n >= 10 and mean >= 0: open
     assert D.regime_from_data(rows + [{"t": 0, "ret": None, "ctx": {"sol_trend": "flat"}}] * 5, BASE)[0] == gate       # non-numeric ret does not vote
@@ -311,6 +317,6 @@ def test_compute_without_paths_sim_or_ctx_falls_back_to_config_and_no_gate(tmp_p
     # a dataset >= 100 rows without any ctx: every key unknown -> no gate (never a blanket block), while the UTC hours still count
     data = [{"t": calendar.timegm((2026, 10, 31, 3, 0, 0)) + i, "ret": -0.02} for i in range(120)]
     st = D.compute(root, BASE, 48.0, 96.0, now=now, data=data, write=False)
-    assert st["regime_gate"] == {} and st["evidence"]["regime"]["ungated"] == list(D.REGIME_KEYS) and 3 not in st["windows"] and len(st["windows"]) == 23
+    assert st["regime_gate"] == {} and st["evidence"]["regime"]["ungated"] == list(D.REGIME_KEYS) and 3 not in st["windows"] and st["windows"] == []   # pooled -2 %: sparse hours closed (02-nov)
     assert st["evidence"]["regime"]["table"]["heat"] == {"na": {"n": 120, "avg_%": -2.0}}
     c, _ = D.apply_director(BASE, dict(st, shadow=False)); assert D.entry_allowed(c, 4, 0) == (True, "ok") and D.entry_allowed(c, 3, 0)[0] is False

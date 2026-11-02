@@ -114,7 +114,8 @@ def healthy(path=STATUS, now=None, max_age=HEALTHY_S):
 
 def _status(n_subs, n_events, state):
     try:
-        json.dump({"ts": time.time(), "subs": n_subs, "events": n_events, "state": state, "ws": WS}, open(STATUS + ".tmp", "w")); os.replace(STATUS + ".tmp", STATUS)
+        from urllib.parse import urlsplit
+        json.dump({"ts": time.time(), "subs": n_subs, "events": n_events, "state": state, "ws": urlsplit(WS).hostname}, open(STATUS + ".tmp", "w")); os.replace(STATUS + ".tmp", STATUS)   # host only: the URL may carry an API key
     except Exception: pass
 
 
@@ -139,7 +140,7 @@ async def run(stop_file="STOP"):
                     if r and r[0] == "event": enqueue(QUEUE, r[1], r[2]); n += 1
                     if time.time() - last_status > 20: _status(len(subs), n, "connected"); last_status = time.time()
         except Exception as e:
-            log.warning("ws %s: reconectando en %s s", str(e)[:120], backoff); _status(0, 0, f"error: {str(e)[:80]}")
+            log.warning("ws %s: reconectando en %s s", str(e)[:120], backoff); _status(0, 0, f"error: {type(e).__name__}")
             await asyncio.sleep(backoff); backoff = min(60, backoff * 2)
     _status(0, 0, "stopped")
 

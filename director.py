@@ -229,10 +229,11 @@ def windows_from_data(data, min_n=HOUR_MIN_N, min_rows=DATA_MIN_ROWS):
         h = row_hour_utc(d)
         if h is not None: by[h].append(d["ret"])
     hours, table = [], {}
+    allv = [r for v in by.values() for r in v]; pooled = sum(allv) / len(allv) if allv else 0.0   # sparse hours open only when the pooled expectancy is >= 0 (02-nov review)
     for hr in range(24):
         v = by.get(hr, []); m = sum(v) / len(v) if v else None
         table[hr] = {"n": len(v), "avg_%": round(m * 100, 2) if m is not None else None}
-        if len(v) < min_n or m >= 0: hours.append(hr)      # unknown hours stay open: the model gate still applies
+        if (pooled >= 0 if len(v) < min_n else m >= 0): hours.append(hr)      # sparse: inherit the pooled verdict; measured: own mean
     return hours, table
 
 
@@ -253,7 +254,8 @@ def regime_from_data(data, cfg=None, min_n=HOUR_MIN_N, min_rows=DATA_MIN_ROWS):
         table[k] = {v: {"n": len(r), "avg_%": round(sum(r) / len(r) * 100, 2)} for v, r in sorted(by.items())}
         if sum(len(r) for v, r in by.items() if v != "na") < min_n: ungated.append(k); continue
         dom = REGIME_DOMAIN.get(k, ()); vals = list(dom) + sorted(v for v in by if v not in dom and v != "na")
-        gate[k] = [v for v in vals if len(by.get(v, [])) < min_n or sum(by[v]) / len(by[v]) >= 0]
+        known = [r for v, rr in by.items() if v != "na" for r in rr]; pooled = sum(known) / len(known) if known else 0.0   # sparse values inherit the key's pooled verdict (02-nov review)
+        gate[k] = [v for v in vals if (pooled >= 0 if len(by.get(v, [])) < min_n else sum(by[v]) / len(by[v]) >= 0)]
         closed[k] = [v for v in vals if v not in gate[k]]
     n_closed = sum(len(v) for v in closed.values())
     note = (f"{len(gate)} claves con evidencia, {n_closed} valores cerrados; 'na' nunca permitido" + (f"; sin evidencia: {', '.join(ungated)}" if ungated else ""))

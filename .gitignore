@@ -42,3 +42,6 @@ data/context_now.json
 data/context.jsonl
 data/labels_solana.jsonl
 research/insider_rank_log.jsonl
+insider_ws_status.json
+insider_ws_queue.jsonl
+data/st_cache.json

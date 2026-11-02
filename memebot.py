@@ -946,7 +946,7 @@ class Meme:
     def status_extras(s):
         """status(): F&G from the context snapshot (news.fng, else news_state.json), headline titles from news_state.json (the snapshot has none),
         a compact 'context' block (fresh / ts / age_s / regime / heat_ratio / stale_n) and the brain v3 extras (model_choice, calibration,
-        active_votes, code_version) when brain.st has them. Local files only; every field None-safe."""
+        active_votes, code_version, archive_n, folds, lambda, cfg_hash, cfg_hash_mismatch_n) when brain.st has them. Local files only; every field None-safe."""
         cx = getattr(s, "_ctx_doc", None); cx = cx if isinstance(cx, dict) else None
         try: import news as _news; ns = _news.state() or {}
         except Exception: ns = {}
@@ -959,7 +959,7 @@ class Meme:
                "heat_ratio": (cx.get("market") or {}).get("heat_ratio") if cx and isinstance(cx.get("market"), dict) else None, "stale_n": len(cx.get("stale") or []) if cx else None}
         bst = s.brain.st if isinstance(getattr(s.brain, "st", None), dict) else {}
         model = {k: bst.get(k) for k in ("updated", "n_labelled", "active", "oos", "base", "avg_win", "avg_loss", "weights")}
-        model.update({k: bst[k] for k in ("model_choice", "calibration", "active_votes", "code_version") if k in bst})
+        model.update({k: bst[k] for k in ("model_choice", "calibration", "active_votes", "code_version", "archive_n", "folds", "lambda", "cfg_hash", "cfg_hash_mismatch_n") if k in bst})
         return {"fng": fng, "headlines": heads, "context": ctx, "model": model}
     def status(s):
         eq = s.equity(); t = s.trades
@@ -1033,7 +1033,8 @@ class Meme:
             threading.Thread(target=_ev, daemon=True).start()
         if time.time()-s.learn_t > 3600:
             s.learn_t = time.time(); import threading   # body in learn_cycle (brain v3 cfg_base + director with paths/sim/ctx, signature-checked)
-            threading.Thread(target=s.learn_cycle, args=(dict(s.c), dict(getattr(s, "c_base", s.c))), daemon=True).start()
+            if getattr(s, "_learn_thr", None) is not None and s._learn_thr.is_alive(): log.warning("[brain] learn still running: skipping this hour")   # never two learns at once (02-nov review)
+            else: s._learn_thr = threading.Thread(target=s.learn_cycle, args=(dict(s.c), dict(getattr(s, "c_base", s.c))), daemon=True); s._learn_thr.start()
         log.info("[solana] equity=%.2f cash=%.2f open=%s SOL=%.2f", s.equity(), s.cash, [p["sym"] for p in s.pos.values()], s.sol)
         s.status()
     def _cache_io(s, save):
@@ -1163,6 +1164,8 @@ class Meme:
                 if liq >= c["min_liquidity_usd"] and ai_pump.is_ai(p["baseToken"].get("name", ""), rec["sym"], (p.get("info") or {}).get("description", ""), narr=rec["narr"]):
                     rec["ai"] = True; s.ai_watch[m] = dict(pair=p.get("pairAddress"), sym=rec["sym"], name=p["baseToken"].get("name", ""), src=rec["src"], dx=p, t=time.time())
             except Exception as e: log.debug("ai detect %s", e)
+            thr = c["min_score"] + pb["score_adj"] + (c.get("news_riskoff_score_add", 10) if ns.get("risk_off") else 0) - (5 if nbo.get(rec["sym"].upper(), 0) > time.time() else 0)
+            rec["ctx"] = ctx_stamp(ctx_doc, thr=thr, score_adj=pb["score_adj"], size_mult=pb["size_mult"], equity=s.equity(), n_pos=len(s.pos))   # per-candidate context stamp (nulls without snapshot)   # stamped BEFORE decide (02-nov review): the scored vector carries the context
             rec["score_brain"] = rec.get("score")   # the score brain.decide sees (insider-adjusted, before the X-buzz / ST bonuses); None on rows where decide never ran
             dec = s.brain.decide(rec, s.equity(), c); rec["brain"] = dec
             xa, xe = x_buzz_adj(m)   # X buzz: score/priority only, AFTER brain sizing; vetoes in f untouched
@@ -1176,8 +1179,6 @@ class Meme:
                     if stb: rec["score"] = sc = round(max(0, min(100, sc + stb)), 1); rec["st_adj"] = stb
                     log.info("[solana] ST check %s verdict=%s veto=%s bonus=%s", rec["sym"], (_r or {}).get("verdict"), stv, stb)
                 except Exception as e: log.warning("st live %s", e)
-            thr = c["min_score"] + pb["score_adj"] + (c.get("news_riskoff_score_add", 10) if ns.get("risk_off") else 0) - (5 if nbo.get(rec["sym"].upper(), 0) > time.time() else 0)
-            rec["ctx"] = ctx_stamp(ctx_doc, thr=thr, score_adj=pb["score_adj"], size_mult=pb["size_mult"], equity=s.equity(), n_pos=len(s.pos))   # per-candidate context stamp (nulls without snapshot)
             if nb.get(rec["sym"].upper(), 0) > time.time() and not f: f.append("news_negative")
             # manipulated-pump play: coordinated accumulation but provably sellable; only soft (concentration/score) failures allowed
             setup = [k for k, ok in (("rug_insiders", rc["insiders"] >= 1), ("concentrated", rc["top10"] > c["max_top10_pct"]), ("insider_accum", I["conv"] >= 3),
@@ -1198,7 +1199,7 @@ class Meme:
                        and (pp.get("m5") or 0) > 0 and I["sells"] == 0 and rc["top10"] <= c.get("pump_max_top10_pct", 45))
             elite_trig = I["elite"] >= 3 and I["sells"] < 3 and I["w"] >= 0.45      # 3+ elite wallets bought it <30 min ago
             if elite_trig and not f: rec["pass"] = True; rec["trigger"] = "insider_elite_group"; log.warning("[solana] INSIDER TRIGGER %s elite=%d conv=%d tok=%s (filters passed)", rec["sym"], I["elite"], I["conv"], I["tok"])
-            elif dec and dec["active"]: rec["pass"] = not f and dec.get("ev_ok", dec["ev_pct"] > 0) and sc >= c.get("brain_min_score", 45)
+            elif dec and dec["active"]: rec["pass"] = not f and dec.get("ev_ok", dec["ev_pct"] > 0) and (rec.get("score_brain") if rec.get("score_brain") is not None else rec.get("score_noX", sc)) >= c.get("brain_min_score", 45)   # validated floor on the pre-bonus score (02-nov review)
             else: rec["pass"] = not f and sc >= thr
             if pump_ok and not rec["pass"] and not c.get("pump_play", False):   # PAPER-ONLY pump-play: never reaches s.buy
                 try:

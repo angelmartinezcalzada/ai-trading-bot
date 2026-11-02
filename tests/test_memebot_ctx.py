@@ -323,3 +323,10 @@ def test_scan_cycle_survives_a_broken_context_module(tmp_path, monkeypatch):
     s._scan_cycle()
     a = _rows()["MintAlpha11"]
     assert s._ctx_doc is None and a["ctx"]["age_s"] is None and a["ctx"]["thr"] == 50 and len(bought) == 1 and bought[0][3]["_btc_on"] is None
+
+
+def test_brain_active_gate_uses_score_brain_not_the_bonus_adjusted_score():
+    """02-nov review: a +9 X/ST bonus must not lift a sub-floor score_brain past brain_min_score on the brain-active path"""
+    src = open(os.path.join(os.path.dirname(memebot.__file__), "memebot.py"), encoding="utf-8").read()
+    line = next(l for l in src.splitlines() if 'elif dec and dec["active"]: rec["pass"]' in l)
+    assert 'rec.get("score_brain")' in line and 'and sc >= c.get("brain_min_score"' not in line
