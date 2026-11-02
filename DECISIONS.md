@@ -985,4 +985,5 @@ Backups: memebot.py / copytrade_paper.py / config.json / DECISIONS.md .bak_rugpu
 - Medio, corregido: el panel no mostraba archivo/cortes/lambda con el bot vivo (status sin esas claves; lambda es un dict logit/ridge). Ahora el status las lleva y el panel las lee.
 - Medio, corregido (E/S y secretos): insider_ws_status.json guardaba la URL completa del WebSocket (puede llevar clave de RPC) y no estaba en .gitignore; ahora solo el host, el error solo por tipo, y .gitignore cubre insider_ws_status.json, insider_ws_queue.jsonl y data/st_cache.json.
 - Medio→bajo, corregido (rendimiento): local_n era O(n) en Python por predicción (92 s por aprendizaje a 12k filas); ahora popcount vectorizado con numpy; filas de más de 60 días fuera del entrenamiento; nunca dos aprendizajes a la vez; ficheros temporales con nombre único.
+- De propina, descubierto por el test nuevo: apply_director convertía una lista de ventanas VACÍA en "todas las horas" (`or range(24)`), es decir, fallaba abierto justo cuando la evidencia cerraba todo; corregido (lista vacía = ninguna hora).
 - Tests: 266.

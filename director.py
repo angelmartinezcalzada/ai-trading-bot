@@ -316,7 +316,7 @@ def apply_director(cfg, state):
     if pl.get("pump") == "off": tighten("pump_paper", False); tighten("pump_play", False)
     if pl.get("pump") is not None: tighten("pump_play", False)      # pump never goes live through the director
     c["director_plays"] = {k: v for k, v in pl.items()}
-    c["director_windows"] = sorted(int(h) for h in (state.get("windows") or range(24)) if 0 <= int(h) < 24)
+    c["director_windows"] = sorted(int(h) for h in (state["windows"] if isinstance(state.get("windows"), list) else range(24)) if 0 <= int(h) < 24)   # an EMPTY list closes every hour (02-nov: `or range(24)` failed open)
     c["director_hours_utc"] = bool(state.get("hours_utc"))          # False for a v1 state: its windows were the machine's local hours
     c["director_max_trades_day"] = state.get("max_trades_day")
     g = state.get("regime_gate")                                     # normalised values, 'na' never allowed; a malformed allowed-list closes that key entirely

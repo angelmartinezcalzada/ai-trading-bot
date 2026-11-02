@@ -319,4 +319,7 @@ def test_compute_without_paths_sim_or_ctx_falls_back_to_config_and_no_gate(tmp_p
     st = D.compute(root, BASE, 48.0, 96.0, now=now, data=data, write=False)
     assert st["regime_gate"] == {} and st["evidence"]["regime"]["ungated"] == list(D.REGIME_KEYS) and 3 not in st["windows"] and st["windows"] == []   # pooled -2 %: sparse hours closed (02-nov)
     assert st["evidence"]["regime"]["table"]["heat"] == {"na": {"n": 120, "avg_%": -2.0}}
-    c, _ = D.apply_director(BASE, dict(st, shadow=False)); assert D.entry_allowed(c, 4, 0) == (True, "ok") and D.entry_allowed(c, 3, 0)[0] is False
+    c, _ = D.apply_director(BASE, dict(st, shadow=False)); assert D.entry_allowed(c, 4, 0)[0] is False and D.entry_allowed(c, 3, 0)[0] is False   # every hour closed: the whole dataset is negative (02-nov)
+    data = [{"t": calendar.timegm((2026, 10, 31, 3, 0, 0)) + i, "ret": 0.02} for i in range(120)]
+    st = D.compute(root, BASE, 48.0, 96.0, now=now, data=data, write=False); c, _ = D.apply_director(BASE, dict(st, shadow=False))
+    assert D.entry_allowed(c, 4, 0) == (True, "ok") and D.entry_allowed(c, 3, 0) == (True, "ok")                           # positive dataset: measured and sparse hours open
