@@ -1199,7 +1199,7 @@ class Meme:
                        and (pp.get("m5") or 0) > 0 and I["sells"] == 0 and rc["top10"] <= c.get("pump_max_top10_pct", 45))
             elite_trig = I["elite"] >= 3 and I["sells"] < 3 and I["w"] >= 0.45      # 3+ elite wallets bought it <30 min ago
             if elite_trig and not f: rec["pass"] = True; rec["trigger"] = "insider_elite_group"; log.warning("[solana] INSIDER TRIGGER %s elite=%d conv=%d tok=%s (filters passed)", rec["sym"], I["elite"], I["conv"], I["tok"])
-            elif dec and dec["active"]: rec["pass"] = not f and dec.get("ev_ok", dec["ev_pct"] > 0) and (rec.get("score_brain") if rec.get("score_brain") is not None else rec.get("score_noX", sc)) >= c.get("brain_min_score", 45)   # validated floor on the pre-bonus score (02-nov review)
+            elif dec and dec["active"]: rec["pass"] = not f and dec.get("ev_ok", dec["ev_pct"] > 0) and min(sc, rec.get("score_brain") if rec.get("score_brain") is not None else rec.get("score_noX", sc)) >= c.get("brain_min_score", 45)   # 02-nov review: the validated pre-bonus score AND the adjusted one must clear the floor (a bonus never lifts, an X shill penalty still lowers)
             else: rec["pass"] = not f and sc >= thr
             if pump_ok and not rec["pass"] and not c.get("pump_play", False):   # PAPER-ONLY pump-play: never reaches s.buy
                 try:
@@ -1210,7 +1210,7 @@ class Meme:
                 pump_ok = False; f.append("pump_paper_only")
             if pump_ok and not rec["pass"]: rec["pass"] = True; rec["trigger"] = "pump_play"; rec["setup"] = setup; f.clear(); log.warning("[solana] PUMP-PLAY candidate %s setup=%s top10=%s rt=%s", rec["sym"], setup, rc["top10"], rec.get("roundtrip_loss_pct"))
             if rec["pass"] and I["w"]*I["tok"] <= -3 and rec.get("trigger") != "insider_elite_group": rec["pass"] = False; f.append("insider_negative")
-            if not f and not rec["pass"]: f.append(f"brain_ev<=0" if dec and dec["active"] else f"score<{thr}")
+            if not f and not rec["pass"]: f.append(("brain_ev<=0" if not dec.get("ev_ok", dec["ev_pct"] > 0) else f"score<{c.get('brain_min_score', 45)}") if dec and dec["active"] else f"score<{thr}")   # name the real reason on the brain path
             if dec: s.decisions = ([{"t": now_s(), "sym": rec["sym"], "score": sc, **{k: dec[k] for k in ("p", "ev_pct", "kelly_pct", "size")}, "pass": rec["pass"], "fail": ",".join(f) or "OK", "narr": ",".join(rec["narr"])}] + s.decisions)[:40]
             s.seen[m] = {"t": time.time() if "rc" not in last or time.time()-last.get("t", 0) > 600 else last["t"], "rc": rc, "holders": rc["holders"] if "holders" not in last or time.time()-last.get("t", 0) > 600 else last["holders"],
                          "liq": liq if "liq" not in last or time.time()-last.get("t", 0) > 600 else last["liq"], "top10": rc["top10"] if "top10" not in last or time.time()-last.get("t", 0) > 600 else last["top10"],

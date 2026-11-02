@@ -358,3 +358,12 @@ def test_training_rows_drop_rows_older_than_the_age_cap():
     arch = [{"rid": "M:1", "t": now - 100 * 86400, "S": {}, "x": {}, "ret": 0.1, "score": 50, "mint": "M", "cfg_hash": "h"},
             {"rid": "M:2", "t": now - 10 * 86400, "S": {}, "x": {}, "ret": 0.1, "score": 50, "mint": "M", "cfg_hash": "h"}]
     assert [r["rid"] for r in brain._training_rows(arch, "h", now)] == ["M:2"]
+
+
+def test_local_n_cache_follows_the_list_object_not_its_id():
+    keys = ["a", "b"]; S = {"a": True}
+    r1 = [0b01] * 7; r2 = [0b10] * 7                                                     # same length, different content
+    n1 = brain.Brain.local_n(S, {"keys": keys, "bool_rows": r1}); n2 = brain.Brain.local_n(S, {"keys": keys, "bool_rows": r2})
+    assert n1 == 7 and n2 == 7                                                             # Hamming(01,10)=2 <= 2 -> all 7 count either way
+    r3 = [0b11] * 3 + [0b00] * 4; assert brain.Brain.local_n({"a": True, "b": True}, {"keys": keys, "bool_rows": r3}) == 7
+    assert brain.Brain.local_n({"a": True, "b": True}, {"keys": keys, "bool_rows": [0b00] * 6}) == 6

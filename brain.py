@@ -342,9 +342,9 @@ class Brain:
         if not rows or not keys: return LOCAL_MIN_N
         b = _bits(S, keys)
         try:   # vectorised popcount (02-nov review: the Python loop was O(n) per call x thousands of calls per learn)
-            arr = _ROWS_CACHE.get(id(rows))
-            if arr is None or len(arr) != len(rows):
-                arr = np.array([int(r) for r in rows], dtype=np.uint64); _ROWS_CACHE.clear(); _ROWS_CACHE[id(rows)] = arr
+            if _ROWS_CACHE.get("rows") is not rows:   # identity on a held reference: an id() can be reused after GC, a live object cannot (02-nov)
+                _ROWS_CACHE.update(rows=rows, arr=np.array([int(r) for r in rows], dtype=np.uint64))
+            arr = _ROWS_CACHE["arr"]
             x = arr ^ np.uint64(b); cnt = np.zeros(len(arr), dtype=np.int32)
             for sh in range(0, 64, 8): cnt += _POP8[((x >> np.uint64(sh)) & np.uint64(0xFF)).astype(np.int64)]
             return max(LOCAL_MIN_N, int((cnt <= LOCAL_HAMMING).sum()))

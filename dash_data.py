@@ -91,9 +91,13 @@ def _short(a, n=4):
     return a if len(a) <= 2 * n + 1 else f"{a[:n]}…{a[-n:]}"
 
 
+_URL_RE = re.compile(r"((?:https?|wss?)://[^/\s'\"?]+)[^\s'\"]*")
+_KEY_RE = re.compile(r"(?i)\b(api[-_]?key|apikey|token|secret|password|passwd|auth)=([^&\s'\",)]+)")
 def _clean(s, n):
-    """drop ' tx=<signature>' tokens and cap the length"""
-    return TX_RE.sub("", "" if s is None else str(s))[:n]
+    """drop ' tx=<signature>' tokens, reduce URLs to scheme+host (an RPC URL in an error line may carry an API key), mask key=value
+    secrets, cap the length"""
+    s = TX_RE.sub("", "" if s is None else str(s))
+    return _KEY_RE.sub(lambda m: m.group(1) + "=***", _URL_RE.sub(r"\1/…", s))[:n]
 
 
 def _iso_ts(s):

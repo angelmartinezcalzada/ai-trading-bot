@@ -329,4 +329,7 @@ def test_brain_active_gate_uses_score_brain_not_the_bonus_adjusted_score():
     """02-nov review: a +9 X/ST bonus must not lift a sub-floor score_brain past brain_min_score on the brain-active path"""
     src = open(os.path.join(os.path.dirname(memebot.__file__), "memebot.py"), encoding="utf-8").read()
     line = next(l for l in src.splitlines() if 'elif dec and dec["active"]: rec["pass"]' in l)
-    assert 'rec.get("score_brain")' in line and 'and sc >= c.get("brain_min_score"' not in line
+    assert 'min(sc, rec.get("score_brain")' in line and 'and sc >= c.get("brain_min_score"' not in line
+    # semantics: the gate value is min(adjusted, pre-bonus) -> bonuses never lift a sub-floor score, an X shill penalty (-3) still lowers it
+    gate = lambda score_brain, sc: min(sc, score_brain) >= 45
+    assert gate(40, 49) is False and gate(46, 43) is False and gate(46, 49) is True and gate(45, 45) is True

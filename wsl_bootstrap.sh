@@ -22,7 +22,9 @@ echo "== parando cualquier instancia anterior (bots y supervisores)"; ./stop.sh 
 pkill -f "run_foreve[r].sh" 2>/dev/null || true; pkill -f "python3 bot.p[y] --exchange" 2>/dev/null || true; pkill -f "python3 dashboar[d].py" 2>/dev/null || true; sleep 1
 ./install.sh
 rm -f STOP; nohup setsid ./run_forever.sh >/dev/null 2>&1 &
-sleep 8; ./status.sh 2>/dev/null | head -8 || true
-echo; echo "== listo. Panel desde Windows: http://localhost:8787/   contraseña: $(cat dashboard_password.txt)"
-echo "== Solana en $(python3 -c "import json;print(json.load(open('config.json'))['exchanges']['solana'].get('mode','paper'))") (real solo cuando copies solana_wallet.json y pongas mode=live)"
+echo "== arrancado; esperando 30 s para el diagnóstico"; sleep 30
+python3 tools/diagnostico.py 2>/dev/null || ./status.sh 2>/dev/null | head -8 || true
+echo; echo "== listo. Panel desde Windows: http://localhost:8787/   (contraseña: cat ~/ai-trading-bot/dashboard_password.txt; no la pegues en chats)"
+echo "== Solana pasa a REAL sola en cuanto solana_wallet.json tiene >= 0,05 SOL (para impedirlo: touch ~/ai-trading-bot/KILL_solana)"
+echo "== diagnóstico cuando quieras: cd ~/ai-trading-bot && python3 tools/diagnostico.py"
 echo "== para que opere 24/7 el PC no debe suspenderse (Configuración > Sistema > Energía > Suspender: nunca)"

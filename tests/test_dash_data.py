@@ -510,3 +510,8 @@ def test_new_fresh_thresholds_and_html_sections(ov):
     for needle in ('id="context"', "renderContext", "Contexto de mercado", "cx-body", "ins.wallets", "regime_gate", "models_hist_flips", "code_version"):
         assert needle in html, needle
     assert "http://" not in html.replace("http://127.0.0.1", "").replace("https?:", "") and "<script src" not in html and "<link" not in html    # no external resources
+
+
+def test_clean_never_shows_rpc_keys_or_url_paths():
+    s = dash_data._clean("ERROR ws https://mainnet.helius-rpc.com/v1/?api-key=SECRET123 and wss://x.io/ws?token=T0K token=ABC", 300)
+    assert "SECRET123" not in s and "T0K" not in s and "ABC" not in s and "https://mainnet.helius-rpc.com/…" in s and "token=***" in s
