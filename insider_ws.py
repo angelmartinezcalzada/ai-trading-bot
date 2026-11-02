@@ -5,6 +5,8 @@ Baja la detección de los 70-130 s del sondeo RPC a ~1-3 s. No decide nada: cada
 insider_ws_queue.jsonl y insider.live() vacía esa cola en cada ciclo y analiza los swaps por el mismo camino de siempre
 (pending_swaps / parse_swap: deduplicado por firma, commitment "confirmed"). El sondeo RPC sigue como red de seguridad cada 10
 ciclos mientras el socket está sano, y cada ciclo si no lo está, así que no se pierde nada si el socket cae.
+Wallets seguidas: las del ranking de fiabilidad (insider_rank.json, elite/good no bot, en el orden de rank['top']) cuando está
+fresco; si no, elite y good de insider_wallets.json por puntuación (rank_eligible / pick_wallets, compartidas con insider.live).
 Endpoint público por defecto (SOL_WS o SOL_RPC en el entorno para cambiarlo). Sin el paquete `websockets` el proceso sale sin error."""
 import json, os, sys, time, asyncio, logging
 
@@ -14,9 +16,44 @@ F_W, QUEUE, STATUS = "insider_wallets.json", "insider_ws_queue.jsonl", "insider_
 MAX_WALLETS, RELOAD_S, PING_S, HEALTHY_S = 100, 900, 30, 120
 
 
-def pick_wallets(W, max_wallets=MAX_WALLETS):
-    """elite first, then good, by score; capped (public endpoints limit the number of subscriptions)"""
+def _rel(RW, w):
+    try: return float((RW.get(w) or {}).get("rel") or 0)
+    except Exception: return 0.0
+
+
+def is_rank(R):
+    """a usable reliability-ranking doc (insider_rank.json contract): a dict with a wallets dict"""
+    return isinstance(R, dict) and isinstance(R.get("wallets"), dict)
+
+
+def rank_eligible(R, ws):
+    """wallets to follow from the reliability ranking, in rank['top'] order and then the rest by rel: tier elite/good IN THE RANK DOC,
+    not flagged bot, and present in insider_wallets.json (`ws`: mining's dev / farm-cluster / min-launch vetoes stay, the ranking only
+    narrows the set, never widens it). 'watch', null tier, bot or unknown wallets are never followed, whatever insider_wallets.json says.
+    [] when R is not a rank doc."""
+    if not is_rank(R): return []
+    RW = R["wallets"]; top = [w for w in (R.get("top") or []) if isinstance(w, str)]
+    order = dict.fromkeys(top + sorted(RW, key=lambda w: -_rel(RW, w)))
+    return [w for w in order if w in (ws or {}) and isinstance(RW.get(w), dict) and RW[w].get("tier") in ("elite", "good") and not RW[w].get("bot")]
+
+
+def rank_load(root=".", now=None, max_age=7200):
+    """fresh rank doc through insider_rank.load (optional module, another engineer's; resolved at call time so a late install or a
+    test fake in sys.modules is seen) or None -> callers keep today's behaviour. A doc older than max_age is never trusted."""
+    try: import insider_rank
+    except ImportError: return None
+    try: R = insider_rank.load(root=root)
+    except Exception as e: log.warning("rank load %s", str(e)[:80]); return None
+    try: fresh = (now or time.time()) - float(R.get("t") or 0) <= max_age if is_rank(R) else False
+    except Exception: fresh = False
+    return R if fresh else None
+
+
+def pick_wallets(W, max_wallets=MAX_WALLETS, R=None):
+    """with a rank doc R: rank_eligible order (elite/good in the rank, non-bot; an empty verdict is final). Otherwise elite first,
+    then good, by mined score; capped (public endpoints limit the number of subscriptions)"""
     ws = (W or {}).get("wallets") or {}
+    if is_rank(R): return rank_eligible(R, ws)[:max_wallets]
     ranked = sorted((w for w, o in ws.items() if isinstance(o, dict) and o.get("tier") in ("elite", "good")),
                     key=lambda w: ({"elite": 0, "good": 1}[ws[w]["tier"]], -float(ws[w].get("sc") or 0)))
     return ranked[:max_wallets]
@@ -57,11 +94,22 @@ def drain(path=QUEUE):
     return {w: list(dict.fromkeys(reversed(s))) for w, s in out.items()}
 
 
+def health(path=STATUS, now=None, max_age=HEALTHY_S):
+    """socket status for insider_status.json: {ok, state, ts, age_s, subs, events} or None when the socket process never reported.
+    The endpoint URL is left out on purpose (it may carry an API key)."""
+    try: s = json.load(open(path))
+    except Exception: return None
+    if not isinstance(s, dict): return None
+    now = now or time.time()
+    try: ts = float(s.get("ts") or 0)
+    except Exception: ts = 0.0
+    return {"ok": s.get("state") == "connected" and now - ts < max_age, "state": str(s.get("state") or "")[:40], "ts": ts, "age_s": round(now - ts, 1),
+            "subs": s.get("subs"), "events": s.get("events")}
+
+
 def healthy(path=STATUS, now=None, max_age=HEALTHY_S):
     """True when the socket process reported 'connected' less than max_age seconds ago"""
-    try: s = json.load(open(path))
-    except Exception: return False
-    return s.get("state") == "connected" and (now or time.time()) - float(s.get("ts") or 0) < max_age
+    return bool((health(path, now, max_age) or {}).get("ok"))
 
 
 def _status(n_subs, n_events, state):
@@ -76,7 +124,7 @@ async def run(stop_file="STOP"):
     while not os.path.exists(stop_file):
         try: W = json.load(open(F_W))
         except Exception: W = {}
-        wallets = pick_wallets(W)
+        wallets = pick_wallets(W, R=rank_load())                 # reliability ranking when fresh, else the old ordering
         if not wallets: log.warning("sin wallets elite/good en %s: espero 60 s", F_W); _status(0, 0, "no_wallets"); await asyncio.sleep(60); continue
         try:
             async with websockets.connect(WS, ping_interval=PING_S, max_queue=512) as ws:

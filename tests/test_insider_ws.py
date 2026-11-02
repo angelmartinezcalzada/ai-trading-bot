@@ -36,3 +36,24 @@ def test_healthy_requires_recent_connected_status(tmp_path, monkeypatch):
     json.dump({"ts": now - 10, "state": "connected"}, open(p, "w")); assert iw.healthy(p, now) is True
     json.dump({"ts": now - 500, "state": "connected"}, open(p, "w")); assert iw.healthy(p, now) is False
     json.dump({"ts": now - 10, "state": "error: boom"}, open(p, "w")); assert iw.healthy(p, now) is False
+
+
+def test_pick_wallets_prefers_rank_doc_and_health_passthrough(tmp_path):
+    import sys, types
+    W = {"wallets": {"a": {"tier": "good", "sc": 9}, "b": {"tier": "elite", "sc": 1}, "c": {"tier": "elite", "sc": 5}, "d": {"tier": "watch", "sc": 99}}}
+    rw = lambda tier, rel, bot=False: {"tier": tier, "rel": rel, "bot": bot}
+    R = {"t": time.time(), "code": "insider_rank/1", "wallets": {"a": rw("elite", 0.9), "b": rw("elite", 0.8, True), "c": rw("good", 0.7), "d": rw("good", 0.6), "z": rw("elite", 0.99)}, "top": ["z", "b", "a"]}
+    assert iw.rank_eligible(R, W["wallets"]) == ["a", "c", "d"]                           # z unknown to mining and b (bot): never; c, d appended by rel; tier from the rank
+    assert iw.pick_wallets(W, R=R) == ["a", "c", "d"] and iw.pick_wallets(W, max_wallets=2, R=R) == ["a", "c"] and iw.pick_wallets(W, R={"wallets": {}}) == []
+    assert iw.pick_wallets(W, R={"nope": 1}) == ["c", "b", "a"]                           # not a rank doc: old ordering
+    p = str(tmp_path / "st.json"); now = time.time(); assert iw.health(p) is None
+    json.dump({"ts": now - 10, "state": "connected", "subs": 5, "events": 2, "ws": "wss://x/?api-key=S"}, open(p, "w"))
+    h = iw.health(p, now); assert h["ok"] is True and h["subs"] == 5 and h["events"] == 2 and h["age_s"] == 10 and "ws" not in h and iw.healthy(p, now) is True
+    json.dump({"ts": now - 10, "state": "error: boom"}, open(p, "w")); assert iw.health(p, now)["ok"] is False and iw.healthy(p, now) is False
+    # rank_load: injected module, stale doc, None, exception, absent module -> old ordering
+    R0 = {"t": now, "wallets": {}}
+    for mod, exp in ((types.SimpleNamespace(load=lambda root=".": R0), R0), (types.SimpleNamespace(load=lambda root=".": dict(R0, t=now - 3 * 3600)), None),
+                     (types.SimpleNamespace(load=lambda root=".": None), None), (types.SimpleNamespace(load=lambda root=".": 1 / 0), None), (None, None)):
+        sys.modules["insider_rank"] = mod
+        try: assert iw.rank_load(now=now) is exp
+        finally: sys.modules.pop("insider_rank", None)
