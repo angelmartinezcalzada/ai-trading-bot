@@ -3,16 +3,28 @@ mine():   early buyers (first N swaps) of launches via public Solana RPC (getSig
 label:    winner = peak mcap >= WIN_MC (>=10x+ from launch), loser = peak < LOSE_MC
 score():  per wallet: hits/misses on winners/losers, bayes hit-rate, earliness, consistency (distinct days), PnL/win-rate/hold from
           GeckoTerminal trades (smart_money), bot/MEV/sniper filter, dev exclusion, funding-source clusters -> tiers elite/good/watch
-live():   polls elite+good wallets' new swaps (RPC, ~60s), convergence = quality-weighted distinct wallets buying the same mint in WIN_CONV
+live():   polls the followed wallets' new swaps (RPC / WebSocket), convergence = distinct CLUSTERS (rank doc cluster id, else address)
+          buying the same mint in conv_win, tier-weighted; wallets followed = reliability ranking (insider_rank.json, elite/good non-bot,
+          rank['top'] order, last 20 of 120 slots rotate over the rest) when fresh, else elite+good of insider_wallets.json as before;
+          live state is checkpointed to insider_live_state.json every cycle and reloaded on start (entries > 6 h dropped)
 exit intel for held tokens is in memebot via exit_intel()."""
 import json, time, os, collections, requests, logging, datetime as dt, math, threading, sys
+import insider_ws                                        # stdlib-only: rank_eligible / rank_load / health shared with the socket process
+try: import insider_rank                                 # reliability ranking (another engineer's module): optional, resolved again at call time (_rank_mod)
+except ImportError: insider_rank = None
 log = logging.getLogger("insider")
 RPC = os.environ.get("SOL_RPC", "https://api.mainnet-beta.solana.com")
 F_MINED = "research/insider_mined.jsonl"; F_W = "insider_wallets.json"; F_LIVE = "research/insider_live.jsonl"; F_ST = "insider_status.json"
 F_PROMO = "insider_promoted.json"; F_CEX = "cex_labels.json"
 WIN_MC, LOSE_MC, N_EARLY, MAX_PAGES = 300_000, 30_000, 100, 20
 WSOL = "So11111111111111111111111111111111111111112"; TW = {"elite": 3, "good": 2, "watch": 1}
-_lk = threading.Lock(); _last = [0.0]
+_lk = threading.Lock(); _last = [0.0]; _rpc_err = collections.deque(maxlen=5000)
+def _rpc_fail():
+    with _lk: _rpc_err.append(time.time())
+def rpc_err_n(now=None, win=600):
+    """rpc() failures (429 / error reply / exception, per attempt, plus the final None) in the last win seconds -> insider_status.rpc_err_n"""
+    now = now or time.time()
+    with _lk: return sum(1 for t in _rpc_err if now-t <= win)
 def rpc(m, p, gap=0.13):
     for i in range(6):
         with _lk:
@@ -21,14 +33,18 @@ def rpc(m, p, gap=0.13):
             _last[0] = time.time()
         try:
             r = requests.post(RPC, json={"jsonrpc": "2.0", "id": 1, "method": m, "params": p}, timeout=25)
-            if r.status_code == 429: time.sleep(2*(i+1)); continue
+            if r.status_code == 429: _rpc_fail(); time.sleep(2*(i+1)); continue
             j = r.json()
             if "error" in j:
-                if j["error"].get("code") in (-32429, 429, -32005): time.sleep(2*(i+1)); continue
-                return None
+                if j["error"].get("code") in (-32429, 429, -32005): _rpc_fail(); time.sleep(2*(i+1)); continue
+                _rpc_fail(); return None
             return j.get("result")
-        except Exception: time.sleep(1+i)
-    return None
+        except Exception: _rpc_fail(); time.sleep(1+i)
+    _rpc_fail(); return None
+def _jdump(path, obj, **k):
+    """atomic JSON write (tmp + os.replace): readers (memebot, dashboard, a restart) never see a half-written file"""
+    with open(path+".tmp", "w") as f: json.dump(obj, f, **k)
+    os.replace(path+".tmp", path)
 def oldest_sigs(addr, n=N_EARLY+20, max_pages=MAX_PAGES):
     before, pages = None, []
     for _ in range(max_pages):
@@ -186,19 +202,33 @@ def cluster(W, max_n=150):
         if len(ws) > 5:
             for w in ws: W[w]["tier"] = None; W[w]["excluded"] = "farm_cluster"
     return {w: o for w, o in W.items() if o.get("tier")}
+def _rank_mod():
+    """insider_rank is optional: resolved at call time so a late install or a test fake in sys.modules is seen (None when absent)"""
+    try:
+        import insider_rank as m; return m
+    except ImportError: return None
 def build(do_cluster=True):
     import smart_money as sm
     L = [json.loads(l) for l in open(F_MINED)]
     W = score(L, sm.load())
     if do_cluster: W = cluster(W)
     tiers = collections.Counter(o["tier"] for o in W.values())
-    json.dump(dict(t=time.time(), launches=len(L), wallets=W, tiers=tiers), open(F_W, "w"))
-    log.warning("[insider] wallets %d %s from %d launches", len(W), dict(tiers), len(L)); return W
+    _jdump(F_W, dict(t=time.time(), launches=len(L), wallets=W, tiers=tiers))
+    log.warning("[insider] wallets %d %s from %d launches", len(W), dict(tiers), len(L))
+    m = _rank_mod()
+    if m is not None:                                    # reliability ranking refreshes with every build (insider_rank.json next to insider_wallets.json)
+        try: m.build(root="."); log.warning("[insider] rank rebuilt")
+        except Exception as e: log.warning("[insider] rank build failed: %s", str(e)[:120])
+    return W
 def load():
     try: return json.load(open(F_W))["wallets"]
     except Exception: return {}
+def rank_doc(now=None, root="."):
+    """fresh reliability ranking (insider_rank.json via insider_rank.load) or None: module absent, file missing, stale (> 2 h) or
+    malformed -> the caller keeps today's behaviour (never a half-trusted doc)"""
+    return insider_ws.rank_load(root, now)
 # ---------- live tracking ----------
-F_WL = "insider_wallet_live.json"; F_TOKV = "research/insider_tok_signals.jsonl"
+F_WL = "insider_wallet_live.json"; F_TOKV = "research/insider_tok_signals.jsonl"; F_LS = "insider_live_state.json"; ROT_N = 20; STATE_MAX_AGE = 6*3600
 def _gk(path, **p):
     """GeckoTerminal free tier: own spacing (>=2.5s) so the insider never starves memebot's 30/min budget"""
     w = 2.5-(time.time()-_gk.t)
@@ -224,29 +254,89 @@ def tok_weight(min_n=20):
     if w < BASE_W and getattr(tok_weight, "_last", None) != w: log.warning("[insider] WEIGHT %s -> %.2f (n=%d hit=%.2f edge=%.3f)", why, w, len(R), hit, edge)
     tok_weight._last = w
     return dict(n=len(R), hit=round(hit, 3), edge=round(edge, 4), weight=w, why=why)
-def live(conv_win=1800, poll=8, max_wallets=120):
-    """v3 real-time: elite wallets polled every cycle (~15-25s), good every 2nd; live per-wallet re-ranking from 1h forward outcomes of
-    their buys; per-token score = cluster buys + elite + smart sells + whale net flow + dev sells + early-buyer exits + new-pool/liquidity;
-    every |score|>=3 snapshot is validated forward (tok_weight) and that weight is what memebot applies."""
+def select_tracked(W, WL, R, rot_i=0, max_wallets=120, rot_n=ROT_N):
+    """-> (tracked [addr, priority order], tiers {addr: 'elite'|'good'}, rotation {i, n, pool, wallets} | None).
+    Rank doc R (fresh insider_rank.json): insider_ws.rank_eligible order (rank['top'], elite/good IN THE RANK, non-bot, present in
+    insider_wallets.json); the first max_wallets-rot_n slots are fixed, the last rot_n are a rotating slice (advances with rot_i, i.e. every
+    reload) of the eligible wallets beyond them, so low-frequency wallets get a live track. tier = rank tier (TW weights).
+    No rank doc: today's behaviour, elite/good of insider_wallets.json by mined score + live 1h re-rank, tier from that file."""
+    if insider_ws.is_rank(R):
+        el = insider_ws.rank_eligible(R, W); RW = R["wallets"]; k = max(0, max_wallets-rot_n); main, pool = el[:k], el[k:]
+        sl = (pool+pool)[(rot_i*rot_n) % len(pool):][:min(rot_n, len(pool))] if pool and rot_n > 0 else []
+        tracked = main+sl
+        return tracked, {w: RW[w]["tier"] for w in tracked}, dict(i=rot_i, n=len(sl), pool=len(pool), wallets=sl)
+    def rank(w):
+        o = W[w]; l = WL.get(w) or {}; n = l.get("n", 0)
+        return o["sc"] + (0.6*((l.get("h", 0)+1)/(n+2)-0.5)*math.log1p(n) if n else 0)
+    ranked = sorted([w for w, o in W.items() if o.get("tier") in ("elite", "good")], key=lambda w: -rank(w))[:max_wallets]
+    return ranked, {w: W[w]["tier"] for w in ranked}, None
+def convergence(buys, sells, now, conv_win, cid):
+    """cid(addr) -> cluster id. conv {mint: {score, n, elite, n_clusters}} over the buys inside conv_win: n = distinct wallets,
+    n_clusters = distinct clusters, elite = distinct ELITE clusters, score = sum of TW[best tier] per cluster (3 wallets of one funding
+    cluster are one actor: elite 1, n 3, n_clusters 1). sells_by_mint = tier-weighted sum over sell EVENTS inside the window (unchanged,
+    memebot reads it); sells_n_by_mint {mint: {n: distinct selling wallets, elite: distinct elite selling wallets}}."""
+    by = collections.defaultdict(dict)
+    for b in buys:
+        if now-b["t"] <= conv_win: by[b["mint"]][b["w"]] = b["tier"]
+    conv = {}
+    for m, ws in by.items():
+        C = {}
+        for w, t in ws.items():
+            c = cid(w)
+            if TW.get(t, 0) >= TW.get(C.get(c), 0): C[c] = t
+        conv[m] = dict(score=sum(TW.get(t, 0) for t in C.values()), n=len(ws), elite=sum(t == "elite" for t in C.values()), n_clusters=len(C))
+    rs = [s for s in sells if now-s["t"] < conv_win]
+    sbm = {m: sum(TW.get(s["tier"], 0) for s in rs if s["mint"] == m) for m in {s["mint"] for s in sells}}
+    sbn = {m: dict(n=len({s["w"] for s in rs if s["mint"] == m}), elite=len({s["w"] for s in rs if s["mint"] == m and s["tier"] == "elite"})) for m in sbm}
+    return conv, sbm, sbn
+def _t(x):
+    try: return float((x or {}).get("t") or 0)
+    except Exception: return 0.0
+def load_state(path=F_LS, now=None, max_age=STATE_MAX_AGE):
+    """live checkpoint -> st. Missing / corrupt / stale (file older than max_age) -> fresh state; entries older than max_age are dropped,
+    so a daemon restart keeps the convergence window and the pending 1h outcomes but never replays stale history."""
+    now = now or time.time(); st = dict(done={}, buys=[], sells=[], alerts=[], feed=[], tok={}, snaps=[], wbuys=[], pools={})
+    try: d = json.load(open(path))
+    except Exception: return st
+    if not isinstance(d, dict) or now-_t(d) > max_age: return st
+    ok = lambda x: isinstance(x, dict) and now-_t(x) <= max_age
+    for k in ("buys", "sells", "alerts", "feed", "snaps", "wbuys"):
+        if isinstance(d.get(k), list): st[k] = [x for x in d[k] if ok(x)]
+    if isinstance(d.get("done"), dict): st["done"] = {w: list(s) for w, s in d["done"].items() if isinstance(s, list)}
+    if isinstance(d.get("tok"), dict): st["tok"] = {m: T for m, T in d["tok"].items() if isinstance(T, dict) and now-max(_t({"t": T.get("flow_t")}), _t({"t": T.get("snap_t")})) <= max_age}
+    if isinstance(d.get("pools"), dict): st["pools"] = {k: v for k, v in d["pools"].items() if ok(v)}
+    if d.get("promo_t"): st["promo_t"] = _t({"t": d["promo_t"]})
+    log.warning("[insider] live state restored: %d buys %d sells %d alerts %d cursors (%.0f min old)", len(st["buys"]), len(st["sells"]), len(st["alerts"]), len(st["done"]), (now-_t(d))/60)
+    return st
+def save_state(st, now=None, path=F_LS):
+    """atomic checkpoint of the in-memory live state (buys, sells, alerts, done cursors, tokens, wbuys, snaps = pending outcomes, pools, feed)"""
+    _jdump(path, dict(t=now or time.time(), v=1, **{k: st[k] for k in ("buys", "sells", "alerts", "done", "tok", "wbuys", "snaps", "pools", "feed")}, promo_t=st.get("promo_t", 0)))
+def live(conv_win=1800, poll=8, max_wallets=120, cycles=None):
+    """v4 real-time: wallets followed per select_tracked (reliability ranking when fresh, else insider_wallets.json), elite polled every
+    cycle (~15-25s), good every 2nd; live per-wallet re-ranking from 1h forward outcomes of their buys; per-token score = cluster buys +
+    elite + smart sells + whale net flow + dev sells + early-buyer exits + new-pool/liquidity; every |score|>=3 snapshot is validated
+    forward (tok_weight) and that weight is what memebot applies. State checkpointed every cycle (insider_live_state.json).
+    cycles=None runs forever (daemon); an int runs that many cycles and returns st (tests)."""
     import smart_money as sm
-    st = dict(done={}, buys=[], sells=[], alerts=[], feed=[], tok={}, snaps=[], wbuys=[], pools={}); W = {}; wt = 0; cyc = 0; gkt = 0; npt = 0
+    os.makedirs("research", exist_ok=True)
+    st = load_state(); W = {}; R = None; wt = 0; cyc = 0; gkt = 0; npt = 0; rot_i = -1; tracked, tiers, rot = [], {}, None
     try: WL = json.load(open(F_WL))
     except Exception: WL = {}
     def feed(kind, **k):
         e = dict(t=time.time(), kind=kind, **k); st["feed"] = (st["feed"]+[e])[-150:]
         open(F_LIVE, "a").write(json.dumps(e)+"\n")
-    while True:
+    while cycles is None or cyc < cycles:
         try:
             cyc += 1; now = t0 = time.time()
-            if now-wt > 900: W = load(); wt = now
-            def rank(w):
-                o = W[w]; l = WL.get(w) or {}; n = l.get("n", 0)
-                return o["sc"] + (0.6*((l.get("h", 0)+1)/(n+2)-0.5)*math.log1p(n) if n else 0)
-            ranked = sorted([w for w, o in W.items() if o.get("tier") in ("elite", "good")], key=lambda w: -rank(w))[:max_wallets]
-            track = [w for w in ranked if W[w]["tier"] == "elite" or cyc % 2 == 0]
-            try: import insider_ws; wsq = insider_ws.drain(insider_ws.QUEUE); ws_ok = insider_ws.healthy()   # real-time feed (insider_ws.py), if running
-            except Exception: wsq, ws_ok = {}, False
-            targets = [w for w in dict.fromkeys(list(wsq) + track) if w in W]
+            if now-wt > 900: W = load(); R = rank_doc(now); rot_i += 1; wt = now      # wallets + rank doc every 15 min; the rotation slice advances with each reload
+            tracked, tiers, rot = select_tracked(W, WL, R, rot_i, max_wallets)
+            RW = R["wallets"] if R else {}
+            cid = (lambda w: (RW.get(w) or {}).get("cluster") or w) if R else (lambda w: (W.get(w) or {}).get("cluster") or w)
+            track = [w for w in tracked if tiers[w] == "elite" or cyc % 2 == 0]
+            try: wsq = insider_ws.drain(insider_ws.QUEUE); wsh = insider_ws.health()   # real-time feed (insider_ws.py), if running
+            except Exception: wsq, wsh = {}, None
+            ws_ok = bool(wsh and wsh.get("ok"))
+            targets = [w for w in dict.fromkeys(list(wsq) + track) if w in tiers]       # a socket event for a wallet the ranking does not follow is dropped
             for w in targets:
                 if w in wsq: s = [{"signature": x} for x in wsq[w]]                                     # WebSocket notifications: seconds, not minutes
                 elif ws_ok and cyc % 10: continue                                                        # socket healthy: RPC polling only every 10th cycle (safety net)
@@ -256,32 +346,28 @@ def live(conv_win=1800, poll=8, max_wallets=120):
                     st["done"][w] = done = ([] if w in wsq else [x["signature"] for x in s])
                     if w not in wsq: continue
                 for e in pending_swaps(s, done, lambda sig: parse_swap(sig, owner=w)):
-                        ev = dict(t=e["ts"] or time.time(), w=w, tier=W[w]["tier"], mint=e["mint"], usd_sol=round(abs(e["dsol"]), 3), lag_s=round(time.time()-(e["ts"] or time.time())))
+                        ev = dict(t=e["ts"] or time.time(), w=w, tier=tiers[w], mint=e["mint"], usd_sol=round(abs(e["dsol"]), 3), lag_s=round(time.time()-(e["ts"] or time.time())))
                         if e["dq"] > 0 and e["dsol"] < 0: st["buys"].append(ev); k = "buy"; st["wbuys"].append(dict(ev, px=_px(e["mint"])))
                         elif e["dq"] < 0 and e["dsol"] > 0: st["sells"].append(ev); k = "sell"
                         else: continue
                         feed("smart_"+k, w=w, tier=ev["tier"], mint=e["mint"], sol=ev["usd_sol"], lag_s=ev["lag_s"])
             now = time.time(); st["buys"] = [b for b in st["buys"] if now-b["t"] < 6*3600]; st["sells"] = [b for b in st["sells"] if now-b["t"] < 6*3600]
-            # live wallet re-rank: 1h forward of each smart buy
+            # live wallet re-rank: 1h forward of each smart buy (measured inside [1h, 1.5h): a buy pending across a long restart is dropped, never mislabelled)
             keep = []
             for b in st["wbuys"]:
                 if now-b["t"] < 3600: keep.append(b); continue
-                p1 = _px(b["mint"]) if b.get("px") else None
+                p1 = _px(b["mint"]) if b.get("px") and now-b["t"] < 5400 else None
                 if p1:
                     l = WL.setdefault(b["w"], dict(n=0, h=0, sum=0.0)); r = p1/b["px"]-1; l["n"] += 1; l["h"] += r > 0; l["sum"] = round(l["sum"]+r, 4)
-            st["wbuys"] = keep[-500:]; json.dump(WL, open(F_WL, "w"))
-            by = collections.defaultdict(dict)
-            for b in st["buys"]:
-                if now-b["t"] <= conv_win: by[b["mint"]][b["w"]] = b["tier"]
-            conv = {m: dict(score=sum(TW[t] for t in ws.values()), n=len(ws), elite=sum(t == "elite" for t in ws.values())) for m, ws in by.items()}
-            sbm = {m: sum(TW[s["tier"]] for s in st["sells"] if s["mint"] == m and now-s["t"] < conv_win) for m in {s["mint"] for s in st["sells"]}}
+            st["wbuys"] = keep[-500:]; _jdump(F_WL, WL)
+            conv, sbm, sbn = convergence(st["buys"], st["sells"], now, conv_win, cid)
             for m, c in conv.items():
-                if c["n"] >= 2 and not any(a["mint"] == m and now-a["t"] < conv_win for a in st["alerts"]):
+                if c["n_clusters"] >= 2 and not any(a["mint"] == m and now-a["t"] < conv_win for a in st["alerts"]):   # 2+ distinct clusters: one funding cluster is one actor
                     a = dict(t=now, mint=m, px=_px(m), **c); st["alerts"].append(a); feed("cluster_buy", mint=m, **c)
-                    log.warning("[insider] CLUSTER BUY %s score=%d wallets=%d elite=%d", m, c["score"], c["n"], c["elite"])
+                    log.warning("[insider] CLUSTER BUY %s score=%d wallets=%d clusters=%d elite=%d", m, c["score"], c["n"], c["n_clusters"], c["elite"])
             for a in st["alerts"]:
                 if a.get("px") and "fwd1h" not in a and now-a["t"] >= 3600:
-                    p1 = _px(a["mint"]); a["fwd1h"] = round(p1/a["px"]-1, 4) if p1 else None
+                    p1 = _px(a["mint"]) if now-a["t"] < 5400 else None; a["fwd1h"] = round(p1/a["px"]-1, 4) if p1 else None
                     open(F_LIVE, "a").write(json.dumps(dict(kind="outcome", mint=a["mint"], t=a["t"], fwd1h=a["fwd1h"], score=a["score"]))+"\n")
             # new pools + liquidity events (GeckoTerminal new_pools, every 60s)
             if now-npt > 60:
@@ -314,29 +400,44 @@ def live(conv_win=1800, poll=8, max_wallets=120):
                 if now-T.get("flow_t", now) > 3600 and not c: st["tok"].pop(m); continue
                 sc = c.get("score", 0) + 2*c.get("elite", 0) - 1.5*sbm.get(m, 0) + max(-4, min(4, (T.get("whale_net") or 0)/5000)) - (4 if (T.get("dev_sell") or 0) > 0 else 0) \
                      - (3 if T.get("early_n") and (T.get("early_sellers") or 0) >= max(3, 0.3*T["early_n"]) else 0)
-                T.update(score=round(max(-15, min(15, sc)), 1), conv=c.get("score", 0), n=c.get("n", 0), elite=c.get("elite", 0), sells=sbm.get(m, 0))
+                T.update(score=round(max(-15, min(15, sc)), 1), conv=c.get("score", 0), n=c.get("n", 0), elite=c.get("elite", 0), n_clusters=c.get("n_clusters", 0), sells=sbm.get(m, 0))
                 if abs(T["score"]) >= 3 and now-T.get("snap_t", 0) > 1800:
                     T["snap_t"] = now; px = _px(m)
                     if px: st["snaps"].append(dict(t=now, mint=m, score=T["score"], px=px)); open(F_TOKV, "a").write(json.dumps(dict(kind="snap", t=now, mint=m, score=T["score"], px=px))+"\n")
             keep = []
             for s_ in st["snaps"]:
                 if now-s_["t"] < 3600: keep.append(s_); continue
-                p1 = _px(s_["mint"])
+                p1 = _px(s_["mint"]) if now-s_["t"] < 5400 else None
                 if p1: open(F_TOKV, "a").write(json.dumps(dict(kind="outcome", t=s_["t"], mint=s_["mint"], score=s_["score"], fwd1h=round(p1/s_["px"]-1, 4)))+"\n")
             st["snaps"] = keep
             if now-st.get("promo_t", 0) > 600: st["promo_t"] = now; promote()
             st["alerts"] = st["alerts"][-50:]; TV = tok_weight()
-            json.dump(dict(ts=now, v=3, tracked=len(ranked), cycle_s=round(time.time()-t0+poll, 1), conv=conv, alerts=st["alerts"], buys=st["buys"][-40:], sells=st["sells"][-40:],
-                           sells_by_mint=sbm, tokens={m: {k: v for k, v in T.items() if k != "snap_t"} for m, T in st["tok"].items()}, tok_valid=TV, feed=st["feed"][-60:],
-                           counts=dict(collections.Counter(e["kind"] for e in st["feed"])), live_ranked=sum(1 for w in ranked if (WL.get(w) or {}).get("n"))),
-                      open(F_ST+".tmp", "w")); os.replace(F_ST+".tmp", F_ST)
+            _jdump(F_ST, dict(ts=now, v=4, tracked=len(tracked), cycle_s=round(time.time()-t0+poll, 1), conv=conv, alerts=st["alerts"], buys=st["buys"][-40:], sells=st["sells"][-40:],
+                              sells_by_mint=sbm, sells_n_by_mint=sbn, tokens={m: {k: v for k, v in T.items() if k != "snap_t"} for m, T in st["tok"].items()}, tok_valid=TV, feed=st["feed"][-60:],
+                              counts=dict(collections.Counter(e["kind"] for e in st["feed"])), live_ranked=sum(1 for w in tracked if (WL.get(w) or {}).get("n")),
+                              rank_t=R.get("t") if R else None, rank_tiers=R.get("tiers") if R else None, rank_src="insider_rank" if R else "insider_wallets",
+                              tracked_by_tier=dict(collections.Counter(tiers[w] for w in tracked)), rotation_slice=rot, rpc_err_n=rpc_err_n(now), ws_health=wsh))
+            save_state(st, now)
         except Exception as e: log.warning("live %s", e)
         time.sleep(poll)
-def _px(m):
+    return st
+_px_c = {}; _px_t = [0.0]; _pxl = threading.Lock()
+def _px(m, ttl=60, gap=0.25):
+    """DexScreener price of the best-liquidity pair. 60 s per-mint cache + 0.25 s spacer (the free endpoint rate-limits at ~300/min and
+    the live loop asks for the same mints every cycle). None = unknown, never cached."""
+    now = time.time(); c = _px_c.get(m)
+    if c and now-c[0] < ttl: return c[1]
+    with _pxl:
+        w = gap-(time.time()-_px_t[0])
+        if w > 0: time.sleep(w)
+        _px_t[0] = time.time()
     try:
         r = requests.get("https://api.dexscreener.com/tokens/v1/solana/"+m, timeout=10).json()
-        return float(max(r, key=lambda p: (p.get("liquidity") or {}).get("usd", 0))["priceUsd"])
+        px = float(max(r, key=lambda p: (p.get("liquidity") or {}).get("usd", 0))["priceUsd"])
     except Exception: return None
+    if len(_px_c) > 2000:
+        for k in [k for k, v in _px_c.items() if now-v[0] >= ttl]: _px_c.pop(k, None)
+    _px_c[m] = (now, px); return px
 def promote(min_n=40):
     """auto-promotion to paper decisions once 40+ live cases show an edge (convergence: mean 1h fwd > +2% and hit>50%;
     exit intel: flagged holdings fell >3pp more over the next hour than unflagged ones)"""
@@ -353,9 +454,9 @@ def promote(min_n=40):
         e = P["exit_live"]
         if e.get("n_flag", 0) >= min_n and e.get("edge_pp", 0) > 3 and not P.get("exit"): P["exit"] = True; P["exit_src"] = "auto_live"; log.warning("[insider] AUTO-PROMOTED exit %s", e)
     except Exception as ex: P["exit_live_err"] = str(ex)[:80]
-    P["t"] = time.time(); json.dump(P, open(F_PROMO, "w"), indent=1); return P
+    P["t"] = time.time(); _jdump(F_PROMO, P, indent=1); return P
 def daemon():
-    """live tracking always on; rebuild wallet tiers every 30 min from mined launches; re-mine new launches every 6h"""
+    """live tracking always on; rebuild wallet tiers (+ the reliability ranking) every 20 min from mined launches; mine a small batch every 20 min"""
     threading.Thread(target=live, daemon=True).start(); mt = time.time() if os.path.exists(F_MINED) and time.time()-os.path.getmtime(F_MINED) < 6*3600 else 0; bt = 0
     while True:
         try:
