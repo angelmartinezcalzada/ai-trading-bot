@@ -239,11 +239,11 @@ def verdict(D):
         v.append(f"✖ El bot de Solana se cae al arrancar: el supervisor lo relanzó {sup['bad_exits']} veces (último código {sup.get('last_code')})"
                  + (f"; último error: {D['crash']}" if D.get("crash") else "") + ".")
     elif sol == 0: v.append("✖ El bot de Solana NO está corriendo: relánzalo con el comando de instalación (wsl_bootstrap.sh).")
+    elif sol and sol > 1: v.append(f"⚠ Hay {sol} copias del bot de Solana (debería haber 1): relanza con el comando de instalación.")
     if D.get("autostart") is False:
         v.append("⚠ Sin arranque automático: en Windows el bot muere al cerrar la ventana de Ubuntu. El comando de instalación lo instala (tools/autostart.sh).")
     elif D.get("autostart") and pr.get("vigilante") == 0:
         v.append("⚠ El vigilante oculto no corre: el bot se parará al cerrar la ventana de Ubuntu. Arreglo: tools/autostart.sh start (o cerrar sesión en Windows y volver a entrar).")
-    elif sol and sol > 1: v.append(f"⚠ Hay {sol} copias del bot de Solana (debería haber 1): relanza con el comando de instalación.")
     if sol and D["status_age"] is not None and D["status_age"] > 300:
         if D.get("sol_age") is not None and D["sol_age"] < 900 and D["status_age"] > D["sol_age"]:
             v.append(f"El bot de Solana arrancó hace {ago(D['sol_age'])}: está haciendo su primer escaneo (puede tardar unos minutos); repite el diagnóstico en 10 min.")

@@ -172,3 +172,10 @@ def test_dns_failure_is_the_first_thing_reported(tmp_path, monkeypatch):
 def test_dns_check_reports_unresolvable_names_without_blocking():
     t0 = time.time(); bad = dg.dns_check(("nonexistent-host-for-test.invalid",), timeout=3.0)
     assert bad == ["nonexistent-host-for-test.invalid"] and time.time() - t0 < 4.0
+
+
+def test_duplicates_are_reported_on_wsl_without_autostart(tmp_path, monkeypatch):
+    """02-nov regression: under WSL without autostart the duplicate-bot warning was swallowed by a misplaced elif"""
+    monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu")
+    _, out = run(make(tmp_path), procs=PROCS_OK + ["10 python3 bot.py --exchange solana --live"])
+    assert "Hay 2 copias del bot de Solana" in out and "Sin arranque automático" in out

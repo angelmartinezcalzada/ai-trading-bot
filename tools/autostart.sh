@@ -65,5 +65,28 @@ case "${1:-status}" in
     if [ -n "$E" ] && [ -f "$E" ]; then echo "autostart: instalado ($E)"; else echo "autostart: NO instalado"; fi
     keeper && echo "vigilante: corriendo" || echo "vigilante: parado"
     running && echo "supervisor: corriendo" || echo "supervisor: parado" ;;
-  *) echo "uso: tools/autostart.sh on | off | start | status"; exit 2 ;;
+  probe)   # 02-nov: which piece of the Windows-side launch fails on this PC (each step writes a marker file inside this distro)
+    [ -n "$DISTRO" ] || { echo "probe: no estoy dentro de WSL"; exit 2; }
+    echo "probe: distro=$DISTRO usuario=$U dir=$DIR"
+    echo "probe: distribuciones de WSL:"; win wsl.exe -l -v | iconv -f UTF-16LE -t UTF-8 2>/dev/null | tr -d '\000' | sed '/^\s*$/d; s/^/  /'
+    chk() { for _ in $(seq 1 "${2:-15}"); do [ -f "/tmp/ka_$1" ] && return 0; sleep 1; done; return 1; }
+    rm -f /tmp/ka_p1 /tmp/ka_p2 /tmp/ka_p3 /tmp/ka_p4 /tmp/ka_p5
+    e="$(win wsl.exe -d "$DISTRO" -u "$U" -e bash -c 'echo ok > /tmp/ka_p1')"
+    chk p1 5 && echo "P1 wsl.exe desde Ubuntu: OK" || echo "P1 wsl.exe desde Ubuntu: FALLA ${e:0:200}"
+    arg() { printf -- "-d \"%s\" -u %s -e bash -c \"%s\"" "$DISTRO" "$U" "$1"; }
+    e="$(ps_run "Start-Process wsl.exe -Wait -ArgumentList '$(arg 'echo ok > /tmp/ka_p2')'" | ps_err)"
+    chk p2 && echo "P2 PowerShell, ventana normal: OK" || echo "P2 PowerShell, ventana normal: FALLA $e"
+    e="$(ps_run "Start-Process wsl.exe -Wait -WindowStyle Hidden -ArgumentList '$(arg 'echo ok > /tmp/ka_p3')'" | ps_err)"
+    chk p3 && echo "P3 PowerShell, oculto: OK" || echo "P3 PowerShell, oculto: FALLA $e"
+    e="$(ps_run "Start-Process wsl.exe -WindowStyle Hidden -ArgumentList '$(arg 'sleep 3; echo ok > /tmp/ka_p4')'" | ps_err)"
+    chk p4 20 && echo "P4 PowerShell, oculto y sin esperar (sobrevive a PowerShell): OK" || echo "P4 PowerShell, oculto y sin esperar: FALLA (el proceso muere al salir PowerShell) $e"
+    b="$(printf '%s' "Start-Process wsl.exe -WindowStyle Hidden -ArgumentList '$(arg 'sleep 3; echo ok > /tmp/ka_p5')'" | iconv -f UTF-8 -t UTF-16LE | base64 -w0)"
+    L="$(ps_run "\$l=Join-Path \$env:TEMP 'ka_probe.lnk'; \$s=(New-Object -ComObject WScript.Shell).CreateShortcut(\$l); \$s.TargetPath=Join-Path \$env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\powershell.exe'; \$s.Arguments='-NoProfile -WindowStyle Hidden -EncodedCommand $b'; \$s.WindowStyle=7; \$s.Save(); [Console]::Out.Write(\$l)" | grep -o '[A-Za-z]:\\.*ka_probe\.lnk' | tail -n 1)"
+    if [ -n "$L" ]; then win explorer.exe "$L" >/dev/null; chk p5 30 && echo "P5 acceso directo vía explorador: OK" || echo "P5 acceso directo vía explorador: FALLA"; win cmd.exe /c del "$L" >/dev/null
+    else echo "P5 acceso directo vía explorador: no se pudo crear el acceso de prueba"; fi
+    echo "probe: líneas del vigilante en supervisor.log: $(grep -c '\[keepalive\]' supervisor.log 2>/dev/null)"; grep '\[keepalive\]' supervisor.log 2>/dev/null | tail -n 3 | sed 's/^/  /'
+    d="$(ps_run "Get-MpThreatDetection | Sort-Object InitialDetectionTime -Descending | Select-Object -First 3 | ForEach-Object { [string]\$_.InitialDetectionTime + ' ' + \$_.ProcessName + ' ' + (\$_.Resources -join ',') }" 2>/dev/null | grep -v '^#<\|<Objs' | head -n 3)"
+    echo "probe: últimas detecciones de Windows Defender: ${d:-ninguna o sin permiso para verlas}"
+    rm -f /tmp/ka_p1 /tmp/ka_p2 /tmp/ka_p3 /tmp/ka_p4 /tmp/ka_p5 ;;
+  *) echo "uso: tools/autostart.sh on | off | start | status | probe"; exit 2 ;;
 esac

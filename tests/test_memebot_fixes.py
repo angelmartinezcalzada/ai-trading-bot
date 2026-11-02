@@ -112,7 +112,8 @@ def test_rug_falls_back_when_rugcheck_has_no_report(monkeypatch):
     assert memebot.Meme.rug(s, "MINT") == {"src": "goplus"}
 
 
-def test_reload_keeps_previous_config_when_file_is_broken(tmp_path):
+def test_reload_keeps_previous_config_when_file_is_broken(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)   # 02-nov: reload() applies ./director_state.json; on a live machine the real Director (out of shadow) tightens size_pct
     cfg = tmp_path / "config.json"
     cfg.write_text(json.dumps({"exchanges": {"solana": {"exit_mode": "trail", "size_pct": 8}}}))
     s = NS(cfg_path=str(cfg), mt=0)
