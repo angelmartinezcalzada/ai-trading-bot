@@ -217,7 +217,10 @@ def build(do_cluster=True):
     log.warning("[insider] wallets %d %s from %d launches", len(W), dict(tiers), len(L))
     m = _rank_mod()
     if m is not None:                                    # reliability ranking refreshes with every build (insider_rank.json next to insider_wallets.json)
-        try: m.build(root="."); log.warning("[insider] rank rebuilt")
+        try:
+            try: import solanatracker as _st
+            except Exception: _st = None
+            m.build(root=".", st=_st); log.warning("[insider] rank rebuilt%s", "" if _st else " (sin Solana Tracker)")   # st: PnL veto + discovery under the 'insider' budget owner
         except Exception as e: log.warning("[insider] rank build failed: %s", str(e)[:120])
     return W
 def load():

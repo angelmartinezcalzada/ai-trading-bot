@@ -317,10 +317,21 @@ def test_migration_of_a_v2_state_and_backward_compatible_decide(tmp_path, monkey
     assert brain.Brain.__new__(brain.Brain).__class__.signals is brain.signals and brain.Brain(str(tmp_path / "none.json")).playbook["size_mult"] == 1.0
 
 
-def test_seed_heat_from_context_rows():
-    b = brain.Brain(); now = 1_800_000_000.0
-    rows = [{"ts": now-7*3600, "market": {"new_pools_vol_h1_usd": 999}},          # too old: ignored
-            {"ts": now-3*3600, "market": {"new_pools_vol_h1_usd": 1200.5}}, {"ts": now-3600, "market": {"new_pools_vol_h1_usd": None}},
-            {"ts": now-1800, "market": {"new_pools_vol_h1_usd": 800}}, {"ts": "bad"}, None]
-    assert b.seed_heat(rows, now=now) == 2 and [v for _, v in b.ctx["heat_hist"]] == [1200.5, 800.0]
-    assert b.seed_heat(rows, now=now) == 0                                          # idempotent
+
+# ---------------------------------------------------------------- 02-nov risk review: regressions
+def test_universe_rule_excludes_policy_vetoed_rows_even_when_tagged_policy():
+    """the OOS baseline must run on the universe the live gate can trade: token/policy vetoes remove the row whatever veto_class says"""
+    assert brain._hard_fails({"fail": ["score<50", "brain_ev<=0", "director_gate", "no_sellability_check"]}) == []
+    for f in ("honeypot/high_tax", "st_snipers", "already_pumped_h1", "news_negative", "insider_negative", "no_momentum_m5", "lp_unlocked"):
+        assert brain._hard_fails({"fail": [f], "veto_class": {f: "policy"}}) == [f]
+
+
+def test_training_rows_carry_ctx_and_hour_utc_for_the_director():
+    import director
+    now = 1_800_000_000.0
+    arch = [{"rid": f"M{i}:{i}", "t": now - 3600 * (i + 1), "t_exit": now - 3600 * i, "S": {}, "x": {}, "ret": -0.05, "score": 50, "mint": f"M{i}", "cfg_hash": "h",
+             "ctx": {"sol_trend": "down", "btc_on": True, "risk_off": False, "heat": "normal", "hour_utc": 5}} for i in range(12)]
+    rows = brain._training_rows(arch, "h", now)
+    assert all(r["ctx"]["sol_trend"] == "down" and r["hour_utc"] == 5 for r in rows)
+    gate, info = director.regime_from_data(rows, {}, min_n=10, min_rows=12)
+    assert "sol_trend" in gate and "down" not in gate["sol_trend"] and "down" in info["closed"]["sol_trend"]   # 12 rows, mean -5 % -> 'down' closed

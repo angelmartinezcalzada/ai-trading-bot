@@ -8,7 +8,8 @@ BASE = "https://data.solanatracker.io"
 DAILY_CAP = int(os.environ.get("ST_DAILY_CAP", "300"))   # 01-nov: free plan ~10k/month = ~330/day; 400 exhausted the month early and the ALT gate went neutral all day
 CACHE_F = "data/st_cache.json"; SHADOW_F = "data/st_shadow.jsonl"; BUDGET_F = "data/st_budget.json"
 TTL = {"tokens": 3600, "deployer": 86400, "price": 300}   # 01-nov: longer cache (risk/creator data moves slowly)
-DAEMON_CAP = int(os.environ.get("ST_DAEMON_CAP", "60"))   # shadow daemon may not starve the live bot (research only: the bot keeps >= 240/day)
+BOT_RESERVE = int(os.environ.get("ST_BOT_RESERVE", "200"))   # 02-nov: guaranteed daily share of the live bot (ALT gate)
+DAEMON_CAP = int(os.environ.get("ST_DAEMON_CAP", "60"))   # shadow daemon may not starve the live bot (research only: the bot keeps >= BOT_RESERVE/day: non-bot owners stop at DAILY_CAP - BOT_RESERVE)
 INSIDER_CAP = int(os.environ.get("ST_INSIDER_CAP", "40"))   # insider_rank discovery/PnL (owner "insider"): research only, counted under "ni"
 TTL.update({"top_traders": 21600, "first_buyers": 86400, "pnl": 43200, "wallet": 21600})   # insider_rank endpoints (leaderboards/wallet PnL move slowly)
 OWNER = ["bot"]
@@ -33,6 +34,7 @@ def _budget_ok():
     b = _load(BUDGET_F, {}); day = time.strftime("%Y-%m-%d")
     if b.get("day") != day: b = {"day": day, "n": 0}
     if b["n"] >= DAILY_CAP: return False
+    if OWNER[0] != "bot" and b["n"] >= DAILY_CAP - BOT_RESERVE: return False   # the live bot keeps BOT_RESERVE requests/day whatever the daemon/insider spent
     if OWNER[0] == "daemon" and b.get("nd", 0) >= DAEMON_CAP: return False
     if OWNER[0] == "insider" and b.get("ni", 0) >= INSIDER_CAP: return False
     b["n"] += 1; b["nd"] = b.get("nd", 0) + (OWNER[0] == "daemon"); b["ni"] = b.get("ni", 0) + (OWNER[0] == "insider"); _dump(b, BUDGET_F); return True

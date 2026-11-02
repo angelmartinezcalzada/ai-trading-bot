@@ -211,8 +211,8 @@ def test_seed_brain_context_uses_a_hook_only_when_present(tmp_path, monkeypatch)
     monkeypatch.chdir(tmp_path); os.makedirs("data")
     open("data/context.jsonl", "w").write(json.dumps({"ts": 1, "market": {"agg_vol_h1_usd": 5}}) + "\n{bad json\n" + json.dumps({"ts": 2}) + "\n")
     assert memebot.Meme.seed_brain_context(NS(brain=NS())) is False                          # a brain without the hook: nothing happens
-    s = NS(brain=brain.Brain(str(tmp_path / "bs.json")))                                    # brain v3 exposes seed_heat -> seeded (bad rows skipped)
-    assert memebot.Meme.seed_brain_context(s) is True
+    s = NS(brain=brain.Brain(str(tmp_path / "bs.json")))                                    # brain v3 has NO seed hook (02-nov review: the context measure differs from the bot's own)
+    assert memebot.Meme.seed_brain_context(s) is False
     got = []; s.brain.seed_heat = lambda rows: got.append(rows)
     assert memebot.Meme.seed_brain_context(s) is True and [r["ts"] for r in got[0]] == [1, 2]
     s.brain.seed_heat = lambda rows: 1 / 0                                                  # a broken hook never breaks startup

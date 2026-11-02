@@ -215,15 +215,12 @@ def _append_archive(path, rows):
     if d: os.makedirs(d, exist_ok=True)
     with open(path, "a", encoding="utf-8") as f: f.write("".join(json.dumps(r, separators=(",", ":"), default=str) + "\n" for r in rows))
 def _hard_fails(r):
-    """vetoes that take a sighting out of the tradable universe. veto_class (written by memebot) decides when present: 'policy'
-    fails (score / model / director / sellability skipped) keep the row, 'hard' and 'soft' remove it; a fail without a class
-    falls back to the name rule (unknown -> hard, fail-closed)"""
-    vc = r.get("veto_class") if isinstance(r.get("veto_class"), dict) else {}; out = []
-    for f in (r.get("fail") or []):
-        c = vc.get(f)
-        if c is None: c = "policy" if (f.startswith("score") or f.startswith("brain_ev") or f.startswith("director") or f == "no_sellability_check") else "hard"
-        if c != "policy": out.append(f)
-    return out
+    """vetoes that take a sighting out of the training/evaluation universe. Rule kept from v2 on purpose (02-nov risk review): every veto
+    the live gate applies to the TOKEN or by POLICY (scam, permissions, liquidity, momentum, news, insider, Solana Tracker, measured round
+    trip, already pumped) removes the row; only the brain's own decisions (score*, brain_ev*, director*, no_sellability_check) keep it.
+    Otherwise the OOS 'beats baseline' test would run on a looser universe than the one the bot can trade and could activate the model
+    on rows it will never see. veto_class (memebot) stays informational."""
+    return [f for f in (r.get("fail") or []) if not (f.startswith("score") or f.startswith("brain_ev") or f.startswith("director") or f == "no_sellability_check")]
 def _training_rows(arch, chash, now):
     """archive -> training rows: per-mint caps (MAX_ROWS_MINT_DAY per UTC day, the newest MAX_ROWS_MINT overall), decay weight
     0.5^(age/HALF_LIFE_D) x MISMATCH_W when labelled under other exit parameters; sorted by t"""
@@ -239,7 +236,8 @@ def _training_rows(arch, chash, now):
         for a in keep[-MAX_ROWS_MINT:]:
             w = 0.5**(max(0.0, now-a["t"])/(HALF_LIFE_D*86400))*(MISMATCH_W if a.get("cfg_hash") != chash else 1.0)
             out.append({"t": a["t"], "t_exit": a.get("t_exit", a["t"]), "S": a["S"], "x": a.get("x") or {}, "ret": a["ret"], "score": a.get("score"), "mint": m,
-                        "w": round(w, 4), "cfg_hash": a.get("cfg_hash"), "rid": a["rid"], "pair": a.get("pair"), "rt": a.get("rt")})
+                        "w": round(w, 4), "cfg_hash": a.get("cfg_hash"), "rid": a["rid"], "pair": a.get("pair"), "rt": a.get("rt"),
+                        "ctx": a.get("ctx") if isinstance(a.get("ctx"), dict) else None, "hour_utc": (a.get("ctx") or {}).get("hour_utc") if isinstance(a.get("ctx"), dict) else None})   # director: regime gate + UTC windows
     return sorted(out, key=lambda d: d["t"])
 def _episodes(data):
     """episode id per row: sightings of one mint separated by < EPISODE_GAP_S belong together (their labels share bars);
@@ -308,18 +306,6 @@ class Brain:
         mult = pb[1]*(0.6 if ctx["sol_trend"] == "down" else 1.0)*(0.8 if btc_on is False else 1.0)
         ctx["playbook"] = {"score_adj": pb[0], "size_mult": round(mult, 2), "name": f"{ctx['heat']}/SOL-{ctx['sol_trend']}"}
         return ctx
-    def seed_heat(s, rows, now=None):
-        """startup seed of the heat baseline from data/context.jsonl rows (dicts, oldest first; memebot.seed_brain_context): the last 6 h of
-        market.new_pools_vol_h1_usd samples enter heat_hist so 'hot/cold' does not read 'normal' for 7 min after every restart. Returns the
-        number of samples seeded. Pure bookkeeping: never raises, never touches thresholds."""
-        now = now or time.time(); hist = s.ctx.setdefault("heat_hist", []); seen = {round(h[0]) for h in hist}; n = 0
-        for r in rows or []:
-            try:
-                t = float(r.get("ts")); v = (r.get("market") or {}).get("new_pools_vol_h1_usd")
-                if v is None or not (now-6*3600 <= t <= now) or round(t) in seen: continue
-                hist.append((t, float(v))); seen.add(round(t)); n += 1
-            except Exception: continue
-        hist.sort(key=lambda h: h[0]); s.ctx["heat_hist"] = [h for h in hist if now-h[0] < 6*3600]; return n
     def narrative(s, name, sym):
         ws = set(re.findall(r"[a-z]{3,}", (name + " " + sym).lower())); return sorted(ws & set(s.ctx.get("narratives", [])))
     # ---------------- microstructure ----------------

@@ -165,7 +165,8 @@ class Meme:
         brain v3 exposes `paths` ([(bars, rt)] per labelled row after learn) -> exit grid through eval_solana.sim (never looser than config);
         the latest context snapshot goes as ctx= only when director.compute accepts it (parallel engineer adds the kwarg)."""
         data = None
-        try: data = s.brain.build_dataset(dict(s.c), max_fetch=0)
+        cb = dict(getattr(s, "c_base", s.c))   # base exits, never the director-tightened ones (labels + cfg_hash must match learn())
+        try: data = s.brain.build_dataset(cb, max_fetch=0, **({"cfg_base": cb} if _accepts(s.brain.build_dataset, "cfg_base") else {}))
         except Exception as e: log.info("[director] dataset: %s", e)
         kw = {}
         paths = getattr(s.brain, "paths", None)

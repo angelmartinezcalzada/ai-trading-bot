@@ -211,3 +211,13 @@ def test_speed_4000_wallets_1200_launches():
                         ev=[dict(w=wal[j], rank=k, dt=float(k), dslot=int(ds[k]), sol=0.3, q=1.0) for k, j in enumerate(idx)]))
     t = time.time(); d = ir.rank({}, big, {}, NOW); dt = time.time()-t
     assert dt < 2.0 and len(d["wallets"]) == NW and len(d["top"]) <= 200 and d["n_launches"] == NL
+
+
+def test_bot_reserve_keeps_the_live_bot_share(tmp_path, monkeypatch):
+    """non-bot owners stop at DAILY_CAP - BOT_RESERVE; the bot itself is only limited by DAILY_CAP"""
+    monkeypatch.chdir(tmp_path); os.makedirs("data")
+    monkeypatch.setattr(st, "DAILY_CAP", 10); monkeypatch.setattr(st, "BOT_RESERVE", 6); monkeypatch.setattr(st, "DAEMON_CAP", 10); monkeypatch.setattr(st, "INSIDER_CAP", 10)
+    st.OWNER[0] = "daemon"; n_d = sum(st._budget_ok() for _ in range(10))
+    st.OWNER[0] = "insider"; n_i = sum(st._budget_ok() for _ in range(10))
+    st.OWNER[0] = "bot"; n_b = sum(st._budget_ok() for _ in range(10))
+    assert n_d == 4 and n_i == 0 and n_b == 6                                              # 4 for the others, 6 kept for the bot
