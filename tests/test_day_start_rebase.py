@@ -9,7 +9,7 @@ class NS(types.SimpleNamespace):
 
 
 def mk(**o):
-    d = dict(live=True, wallet={"sol": 0.57}, cash=96.0, pos={}, c={"starting_equity": 1000}, day_start=1000.0, halted=False, _fresh_live=True, saved=0)
+    d = dict(live=True, wallet={"sol": 0.57}, cash=96.0, pos={}, c={"starting_equity": 1000}, day_start=1000.0, halted=False, _fresh_live=True, saved=0, _reconciled_t=1.0)
     d.update(o); return NS(**d)
 
 
@@ -39,3 +39,8 @@ def test_no_wallet_or_paper_never_rebases():
 def test_halt_with_open_positions_stays_until_flat():
     s = mk(_fresh_live=False, halted=True, pos={"M": {"entry": 1.0, "raw": 10 ** 6, "dec": 6}})
     assert memebot.Meme.rebase_day_start(s) is True and s.halted is True   # kill-switch flatten keeps running; baseline fixed
+
+
+def test_never_rebases_before_a_successful_wallet_read():
+    s = mk(_reconciled_t=0.0, cash=0.0)
+    assert memebot.Meme.rebase_day_start(s) is False and s.day_start == 1000.0 and s._fresh_live is True   # waits for the real read

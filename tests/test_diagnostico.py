@@ -179,3 +179,11 @@ def test_duplicates_are_reported_on_wsl_without_autostart(tmp_path, monkeypatch)
     monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu")
     _, out = run(make(tmp_path), procs=PROCS_OK + ["10 python3 bot.py --exchange solana --live"])
     assert "Hay 2 copias del bot de Solana" in out and "Sin arranque automático" in out
+
+
+def test_autostart_markers_task_and_direct(tmp_path, monkeypatch):
+    monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu"); d = make(tmp_path)
+    open(os.path.join(d, ".autostart"), "w").write("task:TradingBotVigilante\n")
+    _, out = run(d, procs=PROCS_OK); assert "Arranque automático: sí" in out and "vigilante ✓" in out
+    open(os.path.join(d, ".autostart"), "w").write("direct\n")
+    _, out = run(d, procs=PROCS_OK); assert "Arranque automático: solo hasta reiniciar el PC" in out

@@ -149,8 +149,10 @@ def last_crash(lines):
 
 def autostart(root):
     """Windows autostart (tools/autostart.sh writes the .vbs path into .autostart): True / False / None (not WSL)"""
-    try: v = open(os.path.join(root, ".autostart"), encoding="utf-8").read().strip()
+    try: v = (open(os.path.join(root, ".autostart"), encoding="utf-8").read().strip().splitlines() or [""])[0].strip()
     except Exception: return False if os.environ.get("WSL_DISTRO_NAME") else None
+    if v.startswith("task:"): return True          # Windows scheduled task (autostart v4): starts at logon and every 10 min if the watchdog died
+    if v == "direct": return "direct"              # watchdog launched from a window only: no restart after a reboot
     return bool(v) and os.path.exists(v)
 
 
@@ -273,7 +275,7 @@ def report(D):
     o = [f"== Diagnóstico del bot · {time.strftime('%d/%m %H:%M', time.localtime(now))} · últimas {H} h", "Veredicto:"] + [f"  {x}" for x in verdict(D)]
     pr = D["procs"]
     sup = D.get("sup") or {}
-    o.append(f"Arranque automático: {'sí' if D.get('autostart') else 'NO' if D.get('autostart') is False else 'n/a (no es WSL)'} · supervisor {H} h: {sup.get('starts', 0)} arranques del bot, {sup.get('bad_exits', 0)} caídas con error"
+    o.append(f"Arranque automático: {'sí' if D.get('autostart') is True else 'solo hasta reiniciar el PC' if D.get('autostart') == 'direct' else 'NO' if D.get('autostart') is False else 'n/a (no es WSL)'} · supervisor {H} h: {sup.get('starts', 0)} arranques del bot, {sup.get('bad_exits', 0)} caídas con error"
              + (f" · último error: {D['crash']}" if D.get("crash") and sup.get("bad_exits") else ""))
     o.append("Procesos: " + (" · ".join(f"{k} {'✓' if n else '✖'}" + (f"×{n}" if n and n > 1 and k not in ("supervisor", "vigilante") else "") for k, n in pr.items()) if pr.get("solana") is not None else "no se pudo consultar (pgrep)"))
     w = st.get("wallet") if isinstance(st.get("wallet"), dict) else {}

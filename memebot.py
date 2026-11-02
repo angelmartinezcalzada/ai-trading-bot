@@ -123,6 +123,8 @@ class Meme:
         s._fresh_live = live and not os.path.exists(s.state_file)   # baseline comes from the wallet at the first reconcile (rebase_day_start)
         if os.path.exists(s.state_file):
             st = json.load(open(s.state_file)); s.__dict__.update({k: st[k] for k in ("cash", "pos", "trades", "seen", "day", "day_start", "halted", "dead") if k in st})
+        s._reconciled_t = 0.0
+        if live: s.cash = 0.0   # 02-nov fail-closed: REAL cash only from a successful wallet read (reconcile); never starting_equity or a stale state
         if not os.path.exists(s.csv):
             with open(s.csv, "w", newline="") as f: csv.writer(f).writerow("time,exchange,symbol,side,price,qty,fee,pnl,reason,equity".split(","))
     def reload(s):
@@ -231,7 +233,7 @@ class Meme:
         Once reconcile() has read the wallet, the first baseline of the day is the real equity. Also repairs a state saved with that
         bogus baseline (day_start == starting_equity and the wallet is worth < half of it: a true -50 % day is impossible, the
         -5 % stop flattens first). Returns True when it rebased. Never touches a real baseline."""
-        if not s.live or not s.wallet: return False
+        if not s.live or not s.wallet or not getattr(s, "_reconciled_t", 0): return False   # never rebase on an unread wallet (cash 0)
         eq = s.equity(); base = float(s.c.get("starting_equity", 0) or 0)
         bogus = base > 0 and abs(s.day_start - base) < 1e-9 and eq < 0.5 * base
         if not (getattr(s, "_fresh_live", False) or bogus): return False
@@ -430,12 +432,16 @@ class Meme:
         s.save(); log.warning("[solana] >>> SWITCHING TO REAL MONEY: wallet %s holds %.4f SOL", s.wallet["addr"], s.wallet["sol"])
         s.live = True; s.state_file, s.csv = "state_solana_live.json", "trades_solana_live.csv"
         s.pos, s.trades, s.halted = {}, [], False
+        s.cash, s._reconciled_t = 0.0, 0.0   # 02-nov: the PAPER cash (starting_equity 1000 $) used to survive here when the first wallet read failed -> 40 $ buys on a 50 $ wallet
         if os.path.exists(s.state_file):
             st = json.load(open(s.state_file)); s.__dict__.update({k: st[k] for k in ("pos", "trades", "day", "day_start", "halted", "seen", "dead") if k in st})   # seen = loss/re-entry cooldowns (were lost on every restart)
         if not os.path.exists(s.csv):
             with open(s.csv, "w", newline="") as f: csv.writer(f).writerow("time,exchange,symbol,side,price,qty,fee,pnl,reason,equity".split(","))
         s.reconcile(adopt=True)
-        if not os.path.exists(s.state_file) or s.day != dt.date.today().isoformat(): s.day, s.day_start = dt.date.today().isoformat(), s.equity()
+        if not os.path.exists(s.state_file) or s.day != dt.date.today().isoformat():
+            s.day = dt.date.today().isoformat()
+            if s._reconciled_t: s.day_start = s.equity()
+            else: s._fresh_live = True   # wallet not read yet: rebase_day_start sets the baseline at the first successful read
         s.save()
     def reconcile(s, adopt=False):
         """LIVE: cash = SOL above the fee reserve; positions follow real on-chain token balances (drop missing, adopt unknown >= $1)."""
@@ -444,6 +450,7 @@ class Meme:
         except Exception as e: log.warning("[solana] reconcile %s", e); return
         s.wallet = dict(addr=live_sol.address(), sol=bal, usd=bal*(s.sol or 0), t=time.time())
         s.cash = max(0.0, bal-s.c.get("sol_fee_reserve", 0.02))*(s.sol or 0)
+        if s.sol: s._reconciled_t = time.time()   # a real wallet read with a SOL price: cash is trustworthy from here
         for m in list(s.pos):
             if m not in tb:
                 s.pos[m]["miss"] = s.pos[m].get("miss", 0)+1   # RPC can return partial lists: drop only after 3 consecutive misses
@@ -530,6 +537,10 @@ class Meme:
         size = p.get("_size") or min(s.equity()*s.c["position_pct"], s.cash*0.98)
         size = min(size, s.equity()*s.c.get("max_gap_loss_pct", 0.03))   # gap/rug cap: a total wipe-out costs <= 3% equity
         if p.get("_floor") and size < p["_floor"] <= min(s.equity()*s.c.get("max_gap_loss_pct", 0.1), s.cash*0.98): size = p["_floor"]   # live $1 floor
+        if s.live:   # 02-nov backstop, tighten-only: fresh wallet read (<= 5 min) and size <= max_position_pct of the REAL wallet value
+            rt_ = getattr(s, "_reconciled_t", 0); wu = float((s.wallet or {}).get("usd") or 0)
+            if not rt_ or time.time()-rt_ > 300 or wu <= 0: log.warning("[solana] buy %s skipped: wallet not read in the last 5 min (fail-closed)", (p.get("baseToken") or {}).get("symbol", m)); return
+            size = min(size, wu*s.c.get("max_position_pct", 0.1))
         if size < (s.c.get("live_min_trade_usd", 1) if s.live else 10): return
         q = s.quote(USDC, m, size*1e6, p.get("_slip") or s.c["slippage_bps"])
         if not q: log.info("[solana] buy %s aborted: no quote", m); return
@@ -1015,7 +1026,7 @@ class Meme:
         rd_ = s.risk_data(); s._rd_last = rd_
         s.manage(s.marks(), rd_); s.ata_sweep()
         eq_ = s.robust_equity(rd_) if s.live else s.equity()
-        br_ = s.day_start > 0 and eq_ is not None and eq_/s.day_start-1 <= -c["daily_max_drawdown_pct"]
+        br_ = s.day_start > 0 and eq_ is not None and eq_/s.day_start-1 <= -c["daily_max_drawdown_pct"] and (not s.live or bool(getattr(s, "_reconciled_t", 0)))   # unread wallet: no conclusion (buys blocked)
         s._stop_n = (getattr(s, "_stop_n", 0)+1) if br_ else 0
         if br_: log.warning("[solana] daily stop check: robust equity %.2f vs base %.2f (%d/2)", eq_, s.day_start, s._stop_n)
         if s._stop_n >= (2 if s.live else 1) and not s.halted:
