@@ -25,7 +25,7 @@ def prepare(d, now, empty=False):
     from tests.dash_fixture import make_fixture, make_empty
     if empty:   # config.json only; dashboard.py still needs a password file at import time (same "fixture" password)
         make_empty(d); open(os.path.join(d, "dashboard_password.txt"), "w", encoding="utf-8").write("fixture\n")
-    else: make_fixture(d, now)
+    else: make_fixture(d, now, v3=True)   # 02-nov: with the v3 files (context, wallet ranking, brain v3, director v2)
     for f in ("dashboard.py", "dash_data.py", "live_view.py"): shutil.copy(os.path.join(ROOT, f), os.path.join(d, f))
     src, dst = os.path.join(ROOT, "dashboard_v2.html"), os.path.join(d, "dashboard_v2.html")
     if os.path.exists(src): shutil.copy(src, dst)

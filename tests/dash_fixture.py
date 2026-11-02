@@ -43,7 +43,7 @@ def make_empty(d):
     os.makedirs(d, exist_ok=True); _j(os.path.join(d, "config.json"), CONFIG)
 
 
-def make_fixture(d, now):
+def make_fixture(d, now, v3=False):
     """Write the whole synthetic file set under `d` as of epoch `now`; return the values the tests expect."""
     os.makedirs(d, exist_ok=True); P = lambda *a: os.path.join(d, *a); now = float(now); today = dt.date.fromtimestamp(now)
     # operative trailing distance: exit_mode "trail" trails trail_pct_tt (percent) from the peak, the bracket modes use trail_pct
@@ -223,4 +223,20 @@ def make_fixture(d, now):
                "signals": {"Fixture" + "j" * 36: {"sym": "FIXJ", "entry": True, "st_green": True, "bb_pos": 0.7, "atr_ratio": 1.1, "in_universe": True}, "Fixture" + "k" * 36: {"sym": "FIXK", "entry": False, "st_green": False, "bb_pos": 0.3, "atr_ratio": 0.9, "in_universe": True}},
                "rule": "fixture rule"}, open(os.path.join(d, "state", "trend_status.json"), "w", encoding="utf-8"))
     exp["trend"] = {"pnl": 12.0, "n_pos": 1}
+    if v3: add_v3(d, now)
     return exp
+
+def add_v3(d, now):
+    """02-nov: files of the v3 modules (context.py, insider_rank.py, brain v3, director v2) from the synthetic helpers in tests/test_dash_data.py
+    so tools/preview_dashboard.py shows the new cards populated. Never real data (FixtureRank… wallets, fixture regime table)."""
+    try:
+        from tests.test_dash_data import write_context, write_rank, brain_v3, DIRECTOR_V2
+    except Exception: return False
+    write_context(d, now); write_rank(d, now)
+    _j(os.path.join(d, "data", "brain_state.json"), brain_v3(now))
+    try:   # the fresh status wins over data/brain_state.json in dash_data: give its brain.model the v3 keys too
+        sp = os.path.join(d, "status_solana.json"); st = json.load(open(sp, encoding="utf-8")); bm = (st.get("brain") or {}).get("model") or {}
+        bm.update({k: v for k, v in brain_v3(now).items() if k not in ("weights",)}); st.setdefault("brain", {})["model"] = bm; _j(sp, st)
+    except Exception: pass
+    ds = dict(DIRECTOR_V2); ds.update(ts=now - 600, first_run=now - 3 * 86400)
+    _j(os.path.join(d, "director_state.json"), ds); return True
