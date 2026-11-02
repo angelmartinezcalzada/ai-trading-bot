@@ -3,13 +3,18 @@
 
 Every hour (memebot's learn thread, or `python3 director.py --once`) it reads ONLY local files, measures the evidence and writes
 director_state.json with keys that can only TIGHTEN the live config: which plays may trade, the effective score / EV floors,
-the trade size that keeps fixed costs small, the hours and regimes with non-negative evidence, the exit profile (never a looser
-stop) and a daily trade cap. memebot applies it through apply_director(cfg, state); test_director.py proves the invariant
+the trade size that keeps fixed costs small, the hours (UTC) and regimes with non-negative evidence, the exit profile (never a
+looser stop) and a daily trade cap. memebot applies it through apply_director(cfg, state); test_director.py proves the invariant
 "never looser than config" on random inputs. Missing / corrupt / stale state (> MAX_AGE_S) => the base config, logged.
 
 Why fixed costs first: with ~3 $ trades the per-trade fixed cost (token-account rent 0.00204 SOL when the account cannot be
 closed, plus two tx fees) is a few percent of the position, more than any edge the model has measured. The size policy and
 the EV floor are built from that cost, and the memebot closes empty token accounts after every full exit (live_sol).
+
+State v2 (STATE_VERSION): `windows` are UTC hours (`hours_utc` True; memebot passes the UTC hour), `regime_gate` comes from the
+context logged with the dataset rows (regime_from_data: per key, the values whose labelled expectancy is >= 0, unknown never
+allowed) and is enforced by entry_allowed() fail-closed: a non-empty gate without a fresh context snapshot blocks the entry.
+A v1 file still loads (missing keys -> defaults, windows kept as written, hours_utc False) until the next compute() rewrites it.
 
 Governance: every change is appended to director_log.jsonl with its evidence; `--report` prints a Spanish summary for
 DECISIONS.md; the dashboard shows the state. The director can NOT: relax a veto, raise a size above a cap, enable the pump
@@ -19,7 +24,9 @@ import os, sys, json, time, math, csv, collections, datetime as dt, logging
 
 log = logging.getLogger("director")
 STATE_FILE, LOG_FILE = "director_state.json", "director_log.jsonl"
+STATE_VERSION = 2             # v2: windows in UTC hours (hours_utc), regime_gate from the logged context, exit_profile.source
 MAX_AGE_S, SHADOW_S = 3 * 3600, 24 * 3600
+CTX_MAX_AGE_S = 7200          # a context snapshot older than this is "not available": a non-empty regime gate then fails closed
 PLAYS = ("scanner", "insider_elite", "pump", "trend")
 EV_MIN_BASE = 0.01            # brain.EV_MIN (the deployed policy's floor); the director can only raise it
 FIXED_SHARE_TARGET = 0.005    # size the fixed cost down to <= 0.5 % of the position
@@ -27,6 +34,8 @@ FIXED_SHARE_MAX = 0.02        # above 2 % of the position in fixed cost the dire
 PRIOR_N = 10                  # pseudo-trades for the shrinkage of a play's statistics
 MIN_N_OFF, MIN_N_ON = 15, 20  # evidence needed to switch a play off / on
 HOUR_MIN_N, DATA_MIN_ROWS = 10, 100
+REGIME_KEYS = ("sol_trend", "btc_on", "risk_off", "heat")      # the order of context.keys(ctx); values normalised by _rv()
+REGIME_DOMAIN = {"sol_trend": ("up", "down", "flat"), "btc_on": ("true", "false"), "risk_off": ("true", "false"), "heat": ("hot", "normal", "cold")}
 GRID_STOPS, GRID_TRAILS, GRID_MIN_TEST = (3.0, 4.0, 5.0, 6.0), (8.0, 10.0, 12.0), 40
 ATA_RENT_SOL = 0.00203928
 # risk keys the director may touch, and the direction that counts as "tighter"
@@ -55,7 +64,7 @@ def _iso(s):
 
 def ledger_rows(path, now, days, play=None, size_col=None):
     """SELL rows of a trades CSV in the last `days`, each tagged with the play of its BUY (matched by symbol), or with `play` for a
-    single-play ledger (trend: columns time,symbol,side,price,usd,pnl,reason,mint -> size from `size_col`)."""
+    single-play ledger (trend: columns time,symbol,side,price,usd,pnl,reason,mint -> size from `size_col`). `hour` is UTC."""
     if not os.path.exists(path): return []
     out, play_of = [], {}
     try: rows = list(csv.DictReader(open(path, encoding="utf-8", errors="replace")))
@@ -72,7 +81,7 @@ def ledger_rows(path, now, days, play=None, size_col=None):
         except ValueError: size = 0.0
         if size_col and size > 0: size = size - pnl if size > pnl else size     # the trend ledger logs the proceeds: cost basis = proceeds - pnl
         pl = play or ("pump" if classify_play(reason) == "pump" else play_of.get(sym, classify_play(reason)))   # never rebind `play`: it is the per-ledger override
-        out.append({"t": t, "sym": sym, "pnl": pnl, "pct": (pnl / size) if size > 0 else 0.0, "play": pl, "hour": dt.datetime.fromtimestamp(t).hour})
+        out.append({"t": t, "sym": sym, "pnl": pnl, "pct": (pnl / size) if size > 0 else 0.0, "play": pl, "hour": time.gmtime(t).tm_hour})
     return out
 
 
@@ -105,6 +114,50 @@ def plays_evidence(root, now, cfg, days=14):
         exp_c = (wsum / n_eff) if n_eff else None
         ev[p] = {"real": sr, "paper": sp, "n_eff": round(n_eff, 1), "pf": comb["pf"], "exp_pct": round(exp_c * 100 * n_eff / (n_eff + PRIOR_N), 3) if exp_c is not None else None}
     return ev
+
+
+# ---------------------------------------------------------------- context (regime) helpers
+def _rv(v):
+    """normalised regime value: None / '' -> 'na' (unknown), bools -> 'true' / 'false', strings stripped and lower-cased. The gate
+    lists and the live check go through the same function, so a bool from memebot and a 'true' from a JSON row compare equal."""
+    if v is None or v == "": return "na"
+    if isinstance(v, bool): return "true" if v else "false"
+    return str(v).strip().lower() or "na"
+
+
+def regime_values(ctx):
+    """{key: normalised value} for REGIME_KEYS from a context snapshot: ctx['regime'] (memebot snapshot / dataset row) or the flat
+    dict itself; when neither holds a known value, context.keys(ctx) (the context module, when present). Unknown -> 'na'."""
+    out = {k: "na" for k in REGIME_KEYS}
+    if not isinstance(ctx, dict): return out
+    reg = ctx.get("regime"); src = reg if isinstance(reg, dict) else ctx
+    out = {k: _rv(src.get(k)) for k in REGIME_KEYS}
+    if all(v == "na" for v in out.values()) and "regime" not in ctx and not any(k in ctx for k in REGIME_KEYS):   # unknown shape: ask the context module
+        try:
+            import context; vals = tuple(context.keys(ctx))
+            if len(vals) == len(REGIME_KEYS): out = {k: _rv(v) for k, v in zip(REGIME_KEYS, vals)}
+        except Exception: pass
+    return out
+
+
+def row_hour_utc(d):
+    """UTC hour of a dataset row: `hour_utc` when present (0-23); else from `t`: epoch seconds, or an ISO string (aware -> UTC,
+    naive read as UTC), or 'HH:MM' (today). None when nothing is usable: that row does not vote."""
+    h = d.get("hour_utc")
+    if isinstance(h, (int, float)) and not isinstance(h, bool) and 0 <= h < 24: return int(h)
+    t = d.get("t")
+    if isinstance(t, (int, float)) and not isinstance(t, bool):
+        try: return time.gmtime(t).tm_hour
+        except (OverflowError, OSError, ValueError): return None
+    if isinstance(t, str):
+        s = t.strip().replace("T", " ")
+        try:
+            x = dt.datetime.fromisoformat(s)
+            return (x.astimezone(dt.timezone.utc) if x.tzinfo else x).hour
+        except ValueError: pass
+        try: return int(s.split(" ")[-1].split(":")[0]) % 24 if ":" in s else None
+        except ValueError: return None
+    return None
 
 
 # ---------------------------------------------------------------- the decisions (pure functions)
@@ -168,10 +221,13 @@ def plays_decision(ev, prev, cost_pct, cfg):
 
 
 def windows_from_data(data, min_n=HOUR_MIN_N, min_rows=DATA_MIN_ROWS):
-    """hours (local) whose labelled replay expectancy is >= 0 with >= min_n rows; all 24 when the dataset is too small."""
+    """UTC hours whose labelled replay expectancy is >= 0 with >= min_n rows; all 24 when the dataset is too small. The hour of a
+    row is `hour_utc` when present, else its `t` read as UTC (row_hour_utc); rows without a usable hour do not vote."""
     if not data or len(data) < min_rows: return list(range(24)), {"note": f"dataset {len(data or [])} < {min_rows} filas: sin restricción horaria"}
     by = collections.defaultdict(list)
-    for d in data: by[dt.datetime.fromtimestamp(d["t"]).hour].append(d["ret"])
+    for d in data:
+        h = row_hour_utc(d)
+        if h is not None: by[h].append(d["ret"])
     hours, table = [], {}
     for hr in range(24):
         v = by.get(hr, []); m = sum(v) / len(v) if v else None
@@ -180,14 +236,39 @@ def windows_from_data(data, min_n=HOUR_MIN_N, min_rows=DATA_MIN_ROWS):
     return hours, table
 
 
+def regime_from_data(data, cfg=None, min_n=HOUR_MIN_N, min_rows=DATA_MIN_ROWS):
+    """regime gate {key: [allowed values]} from the `ctx` of the labelled rows, per single key (same convention as the hourly
+    windows): a value is allowed when it has < min_n rows (insufficient evidence; the model gate still applies) or its mean ret
+    >= 0. Unknown ('na') is never allowed (fail-closed: a live snapshot without that key does not pass), and a key enters the
+    gate only when >= min_n rows carry a known value for it (no logged context for a key -> no gate on it). Dataset < min_rows
+    -> {}. Returns (gate, info): info = {"table": {key: {value: {"n", "avg_%"}}}, "closed": {key: [values closed by evidence]},
+    "ungated": [keys without evidence], "note"}. `cfg` is accepted for the contract and not used."""
+    if not data or len(data) < min_rows: return {}, {"table": {}, "closed": {}, "ungated": list(REGIME_KEYS), "note": f"dataset {len(data or [])} < {min_rows} filas: sin puerta de régimen"}
+    rv = [(regime_values(d.get("ctx")), d.get("ret")) for d in data]
+    gate, table, closed, ungated = {}, {}, {}, []
+    for k in REGIME_KEYS:
+        by = collections.defaultdict(list)
+        for vals, ret in rv:
+            if isinstance(ret, (int, float)) and not isinstance(ret, bool): by[vals[k]].append(ret)
+        table[k] = {v: {"n": len(r), "avg_%": round(sum(r) / len(r) * 100, 2)} for v, r in sorted(by.items())}
+        if sum(len(r) for v, r in by.items() if v != "na") < min_n: ungated.append(k); continue
+        dom = REGIME_DOMAIN.get(k, ()); vals = list(dom) + sorted(v for v in by if v not in dom and v != "na")
+        gate[k] = [v for v in vals if len(by.get(v, [])) < min_n or sum(by[v]) / len(by[v]) >= 0]
+        closed[k] = [v for v in vals if v not in gate[k]]
+    n_closed = sum(len(v) for v in closed.values())
+    note = (f"{len(gate)} claves con evidencia, {n_closed} valores cerrados; 'na' nunca permitido" + (f"; sin evidencia: {', '.join(ungated)}" if ungated else ""))
+    return gate, {"table": table, "closed": closed, "ungated": ungated, "note": note}
+
+
 def exit_grid(paths, cfg, sim):
     """paths: [(bars, rt_pct)] (1m OHLCV from the sighting, round-trip cost). Replays every profile <= config (never looser) with
-    `sim` (eval_solana.sim) and picks the best OOS mean net return on the newest 30 % if it beats config by > 0.2 pp."""
+    `sim` (eval_solana.sim) and picks the best OOS mean net return on the newest 30 % if it beats config by > 0.2 pp.
+    The profile carries `source`: 'replay' when the grid chose it, 'config' otherwise."""
     hs0, tr0 = float(cfg.get("hard_stop_pct", 6)), float(cfg.get("trail_pct_tt", 12))
     grid = [(h, t) for h in GRID_STOPS if h <= hs0 for t in GRID_TRAILS if t <= tr0]
     if (hs0, tr0) not in grid: grid.append((hs0, tr0))
     n = len(paths); cut = int(n * 0.7); test = paths[cut:]
-    if len(test) < GRID_MIN_TEST: return {"hard_stop_pct": hs0, "trail_pct": tr0, "why": f"solo {len(test)} trayectorias de test (< {GRID_MIN_TEST}): perfil de config"}, {}
+    if len(test) < GRID_MIN_TEST: return {"hard_stop_pct": hs0, "trail_pct": tr0, "source": "config", "why": f"solo {len(test)} trayectorias de test (< {GRID_MIN_TEST}): perfil de config"}, {}
     res = {}
     for h, t in grid:
         c = dict(cfg, exit_mode="trail", hard_stop_pct=h, trail_pct_tt=t)
@@ -197,8 +278,8 @@ def exit_grid(paths, cfg, sim):
     best = max((k for k in res if res[k]["avg_%"] is not None), key=lambda k: res[k]["avg_%"], default=None)
     if best and base is not None and res[best]["avg_%"] > base + 0.2:
         h, t = (float(x) for x in best.split("/"))
-        return {"hard_stop_pct": h, "trail_pct": t, "why": f"replay OOS {res[best]['avg_%']}% vs config {base}% ({len(test)} trayectorias)"}, res
-    return {"hard_stop_pct": hs0, "trail_pct": tr0, "why": f"ningún perfil más cerrado supera a config por > 0,2 pp (config {base}%)"}, res
+        return {"hard_stop_pct": h, "trail_pct": t, "source": "replay", "why": f"replay OOS {res[best]['avg_%']}% vs config {base}% ({len(test)} trayectorias)"}, res
+    return {"hard_stop_pct": hs0, "trail_pct": tr0, "source": "config", "why": f"ningún perfil más cerrado supera a config por > 0,2 pp (config {base}%)"}, res
 
 
 def max_trades_day(cfg, equity, target_usd, avg_loss_pct=None):
@@ -234,39 +315,67 @@ def apply_director(cfg, state):
     if pl.get("pump") is not None: tighten("pump_play", False)      # pump never goes live through the director
     c["director_plays"] = {k: v for k, v in pl.items()}
     c["director_windows"] = sorted(int(h) for h in (state.get("windows") or range(24)) if 0 <= int(h) < 24)
+    c["director_hours_utc"] = bool(state.get("hours_utc"))          # False for a v1 state: its windows were the machine's local hours
     c["director_max_trades_day"] = state.get("max_trades_day")
-    c["director_regime_gate"] = state.get("regime_gate") or {}
+    g = state.get("regime_gate")                                     # normalised values, 'na' never allowed; a malformed allowed-list closes that key entirely
+    c["director_regime_gate"] = {str(k): (sorted({_rv(x) for x in v} - {"na"}) if isinstance(v, (list, tuple, set)) else []) for k, v in g.items()} if isinstance(g, dict) else {}
     c["director_ts"] = state.get("ts")
     return c, changes
 
 
+def _upgrade(st):
+    """backward-compatible defaults for a state written by an older director (v1: windows in the machine's local hour, no regime
+    gate): missing keys -> defaults, nothing converted. The next hourly compute() rewrites the file as STATE_VERSION."""
+    v = st.get("version"); st["version"] = v if isinstance(v, int) and not isinstance(v, bool) else 1
+    st["hours_utc"] = bool(st.get("hours_utc", st["version"] >= 2))
+    if not isinstance(st.get("regime_gate"), dict): st["regime_gate"] = {}
+    ep = st.get("exit_profile")
+    if isinstance(ep, dict) and "source" not in ep: ep["source"] = "replay" if str(ep.get("why") or "").startswith("replay") else "config"
+    return st
+
+
 def load_state(root, now=None, max_age=MAX_AGE_S):
-    """(state or None, reason). None when the file is missing, corrupt or older than max_age: the base config then rules."""
+    """(state or None, reason). None when the file is missing, corrupt or older than max_age: the base config then rules.
+    An older state version loads with defaults for its missing keys (_upgrade)."""
     now = now or time.time(); p = os.path.join(root, STATE_FILE)
     if not os.path.exists(p): return None, "sin director_state.json"
     try: st = json.load(open(p))
     except Exception as e: return None, f"director_state.json ilegible: {str(e)[:80]}"
     if not isinstance(st, dict) or not isinstance(st.get("ts"), (int, float)): return None, "director_state.json sin ts"
     if now - st["ts"] > max_age: return None, f"director_state.json obsoleto ({(now - st['ts'])/3600:.1f} h)"
-    return st, "ok"
+    return _upgrade(st), "ok"
 
 
-def entry_allowed(c, now_hour, n_trades_today, play="scanner"):
-    """memebot gate: play enabled, hour in the window, daily cap not reached. Fail-closed on a malformed state (allowed=True only
-    when the director keys are absent, i.e. base config)."""
+def entry_allowed(c, now_hour, n_trades_today, play="scanner", ctx=None, now=None):
+    """memebot gate: play enabled, hour in the window (`now_hour` = UTC hour; a v1 state, director_hours_utc False, keeps the hour
+    it was computed with), daily cap not reached and, when the director has a NON-empty regime gate, a fresh context snapshot
+    (`ctx` = {'ts': epoch, 'regime': {sol_trend, btc_on, risk_off, heat}} or a flat dict; ts <= CTX_MAX_AGE_S old) whose value for
+    every gated key is in the allowed list. Fail-closed: a gate without a usable snapshot blocks ('director: contexto no
+    disponible'); allowed=True only when the director keys are absent (base config) or every check passes."""
     pl = c.get("director_plays")
     if pl is not None and pl.get(play, "on") not in (("on", "paper") if play in ("pump", "trend") else ("on",)): return False, f"director: jugada {play} apagada"
     w = c.get("director_windows")
-    if w is not None and now_hour not in w: return False, f"director: hora {now_hour} fuera de ventana"
+    if w is not None and now_hour not in w: return False, f"director: hora {now_hour}{' UTC' if c.get('director_hours_utc') else ''} fuera de ventana"
     mx = c.get("director_max_trades_day")
     if mx is not None and n_trades_today >= mx: return False, f"director: tope diario {mx} operaciones alcanzado"
+    gate = c.get("director_regime_gate")
+    if gate:
+        if not isinstance(gate, dict): return False, "director: puerta de regimen ilegible"
+        ts = ctx.get("ts") if isinstance(ctx, dict) else None
+        age = ((now or time.time()) - ts) if isinstance(ts, (int, float)) and not isinstance(ts, bool) else None
+        if age is None or age > CTX_MAX_AGE_S or age < -300: return False, "director: contexto no disponible"     # stale, or from the future (wrong unit / clock)
+        cur = regime_values(ctx)
+        for k, allowed in gate.items():
+            v = cur.get(k, "na")
+            if v == "na" or not isinstance(allowed, (list, tuple, set)) or v not in {_rv(a) for a in allowed}: return False, f"director: regimen {k}={v} cerrado"   # unknown never passes
     return True, "ok"
 
 
 # ---------------------------------------------------------------- the hourly computation
-def compute(root, cfg, equity, sol_usd, now=None, data=None, paths=None, sim=None, prev=None, write=True):
-    """Build the director state from local evidence. `data` = brain.build_dataset rows (t, ret, score, S), `paths` = [(bars, rt)]
-    for the exit grid; both optional (None => that decision falls back to config). Writes STATE_FILE and LOG_FILE unless write=False."""
+def compute(root, cfg, equity, sol_usd, now=None, data=None, paths=None, sim=None, prev=None, write=True, ctx=None):
+    """Build the director state from local evidence. `data` = brain.build_dataset rows (t, ret, score, S; optional ctx, hour_utc),
+    `paths` = [(bars, rt)] + `sim` (eval_solana.sim) for the exit grid, `ctx` = the current context snapshot ({'ts', 'regime'}),
+    all optional (None => that decision falls back to config / no gate). Writes STATE_FILE and LOG_FILE unless write=False."""
     now = now or time.time(); cfg = dict(cfg); prev = prev if prev is not None else (load_state(root, now, max_age=10 * 86400)[0] or {})
     first_run = prev.get("first_run") or now
     rlp = rent_lost_prob(root)
@@ -286,14 +395,19 @@ def compute(root, cfg, equity, sol_usd, now=None, data=None, paths=None, sim=Non
             bb, bm = max(cands, key=lambda x: x[1]); base_m = sum(r for v in buckets.values() for r in v) / len(data)
             if bm > base_m + 0.005 and bb > cfg.get("min_score", 45): msf, why_s = bb, f"bucket {bb}+ media {bm*100:.2f}% vs global {base_m*100:.2f}%"
     windows, wtable = windows_from_data(data)
-    ep, grid = (exit_grid(paths, cfg, sim) if (paths and sim) else ({"hard_stop_pct": float(cfg.get("hard_stop_pct", 6)), "trail_pct": float(cfg.get("trail_pct_tt", 12)), "why": "sin trayectorias: perfil de config"}, {}))
+    gate, ginfo = regime_from_data(data, cfg)
+    ep, grid = (exit_grid(paths, cfg, sim) if (paths and sim) else ({"hard_stop_pct": float(cfg.get("hard_stop_pct", 6)), "trail_pct": float(cfg.get("trail_pct_tt", 12)), "source": "config", "why": "sin trayectorias: perfil de config"}, {}))
     al = (ev.get("scanner") or {}).get("real", {}).get("exp_pct_raw")
     mtd = max_trades_day(cfg, equity, sp["target_usd"], abs(al) if al is not None and al < 0 else None)
-    st = {"ts": now, "first_run": first_run, "shadow": (now - first_run) < SHADOW_S, "version": 1,
-          "plays": plays, "min_score_eff": msf, "ev_min_eff": evf, "size_policy": sp, "windows": windows, "regime_gate": {},
+    cx = None
+    if isinstance(ctx, dict):
+        ts = ctx.get("ts") if isinstance(ctx.get("ts"), (int, float)) and not isinstance(ctx.get("ts"), bool) else None
+        cx = {"ts": ts, "age_s": round(now - ts) if ts is not None else None, "fresh": ts is not None and -300 <= now - ts <= CTX_MAX_AGE_S, "regime": regime_values(ctx)}
+    st = {"ts": now, "first_run": first_run, "shadow": (now - first_run) < SHADOW_S, "version": STATE_VERSION, "hours_utc": True,
+          "plays": plays, "min_score_eff": msf, "ev_min_eff": evf, "size_policy": sp, "windows": windows, "regime_gate": gate,
           "exit_profile": ep, "max_trades_day": mtd,
           "evidence": {"equity": round(equity, 2), "sol_usd": round(sol_usd, 2), "fixed_cost_usd": round(fixed, 4), "rent_lost_prob": rlp, "cost_pct": cost_pct,
-                       "plays": ev, "plays_why": why_p, "score_floor_why": why_s, "hours": wtable, "exit_grid": grid, "dataset_rows": len(data or [])}}
+                       "plays": ev, "plays_why": why_p, "score_floor_why": why_s, "hours": wtable, "regime": ginfo, "exit_grid": grid, "dataset_rows": len(data or []), "context": cx}}
     if write:
         changes = _diff(prev, st)
         _atomic_json(os.path.join(root, STATE_FILE), st)
@@ -305,19 +419,30 @@ def compute(root, cfg, equity, sol_usd, now=None, data=None, paths=None, sim=Non
 
 def _diff(prev, st):
     out = []
-    for k in ("plays", "min_score_eff", "ev_min_eff", "windows", "exit_profile", "max_trades_day"):
+    for k in ("plays", "min_score_eff", "ev_min_eff", "windows", "regime_gate", "exit_profile", "max_trades_day"):
         a, b = prev.get(k), st.get(k)
         if k == "exit_profile": a, b = ({x: (a or {}).get(x) for x in ("hard_stop_pct", "trail_pct")}, {x: (b or {}).get(x) for x in ("hard_stop_pct", "trail_pct")})
+        if k == "regime_gate": a, b = (a or {}), (b or {})
         if a != b: out.append({"key": k, "before": a, "after": b})
     a, b = (prev.get("size_policy") or {}).get("target_usd"), (st.get("size_policy") or {}).get("target_usd")
     if a != b: out.append({"key": "size_policy.target_usd", "before": a, "after": b})
     return out
 
 
+def regime_closed(st):
+    """{key: [closed values]} of a state: the evidence's own list when present, else the domain values missing from the gate."""
+    rg = ((st.get("evidence") or {}).get("regime") or {}).get("closed")
+    if isinstance(rg, dict): return {k: list(v) for k, v in rg.items() if isinstance(v, list)}
+    gate = st.get("regime_gate") or {}
+    return {k: [v for v in REGIME_DOMAIN.get(k, ()) if v not in (allowed or [])] for k, allowed in gate.items()} if isinstance(gate, dict) else {}
+
+
 def summary_line(st):
-    sp = st.get("size_policy") or {}; ep = st.get("exit_profile") or {}
+    sp = st.get("size_policy") or {}; ep = st.get("exit_profile") or {}; gate = st.get("regime_gate") or {}
+    n_closed = sum(len(v) for v in regime_closed(st).values())
     return (f"jugadas={st.get('plays')} score>={st.get('min_score_eff')} EV>={100*(st.get('ev_min_eff') or 0):.2f}% tamaño={sp.get('target_usd')}$ "
-            f"(coste fijo {100*(sp.get('fixed_share') or 0):.2f}%) ventana={len(st.get('windows') or [])}h stop={ep.get('hard_stop_pct')}%/trail={ep.get('trail_pct')}% "
+            f"(coste fijo {100*(sp.get('fixed_share') or 0):.2f}%) ventana={len(st.get('windows') or [])}h{' UTC' if st.get('hours_utc') else ''} "
+            f"regimen={len(gate)} claves/{n_closed} valores cerrados stop={ep.get('hard_stop_pct')}%/trail={ep.get('trail_pct')}% (salida: {ep.get('source') or 'config'}) "
             f"max/día={st.get('max_trades_day')}")
 
 
@@ -329,11 +454,20 @@ def report(st):
          f"- Capital {e.get('equity')} $ · SOL {e.get('sol_usd')} $ · coste fijo por operación {e.get('fixed_cost_usd')} $ (prob. rent perdido {e.get('rent_lost_prob')}) → coste total estimado {e.get('cost_pct')} % de la posición.",
          f"- Tamaño: {sp.get('why')}. EV mínimo efectivo {100*(st.get('ev_min_eff') or 0):.2f} %. Score mínimo efectivo {st.get('min_score_eff')} ({e.get('score_floor_why')}).",
          f"- Jugadas: " + "; ".join(f"{k}={v} ({(e.get('plays_why') or {}).get(k, '')})" for k, v in (st.get("plays") or {}).items()),
-         f"- Ventana horaria: {len(st.get('windows') or [])}/24 horas permitidas" + (f" (dataset {e.get('dataset_rows')} filas)" if e.get("dataset_rows") else " (sin dataset: todas)"),
-         f"- Perfil de salida: stop −{ep.get('hard_stop_pct')} % / trail {ep.get('trail_pct')} % ({ep.get('why')}). Tope diario: {st.get('max_trades_day')} operaciones."]
+         f"- Ventana horaria ({'UTC' if st.get('hours_utc') else 'hora local, estado v1'}): {len(st.get('windows') or [])}/24 horas permitidas" + (f" (dataset {e.get('dataset_rows')} filas)" if e.get("dataset_rows") else " (sin dataset: todas)"),
+         f"- Perfil de salida: stop −{ep.get('hard_stop_pct')} % / trail {ep.get('trail_pct')} % (origen: {ep.get('source') or 'config'}; {ep.get('why')}). Tope diario: {st.get('max_trades_day')} operaciones."]
     for p, v in (e.get("plays") or {}).items():
         r, pp = v.get("real") or {}, v.get("paper") or {}
         L.append(f"  - {p}: real n={r.get('n')} PF={r.get('pf_raw')} exp={r.get('exp_pct_raw')} % · papel n={pp.get('n')} PF={pp.get('pf_raw')} exp={pp.get('exp_pct_raw')} %")
+    gate = st.get("regime_gate") or {}; rg = e.get("regime") or {}; closed = regime_closed(st)
+    L.append("- Régimen (puerta por contexto registrado): " + ((f"{len(gate)} claves con puerta, {sum(len(v) for v in closed.values())} valores cerrados; "
+             + "; ".join(f"{k}: cerrado [{', '.join(v)}]" for k, v in closed.items() if v) + (f" · {rg.get('note')}" if rg.get("note") else "")) if gate
+             else ("sin puerta (" + str(rg.get("note") or "sin evidencia de régimen en el dataset") + ")")))
+    for k, tab in (rg.get("table") or {}).items():
+        cells = " · ".join(f"{v} n={x.get('n')} media={x.get('avg_%')} % {'✓' if v in gate.get(k, []) else '✗'}" for v, x in tab.items())
+        L.append(f"  - {k}{'' if k in gate else ' (sin evidencia: sin puerta)'}: {cells or 'sin filas'}")
+    cx = e.get("context")
+    if isinstance(cx, dict): L.append(f"- Contexto actual: {cx.get('regime')} (edad {cx.get('age_s')} s, {'fresco' if cx.get('fresh') else 'NO disponible: la puerta bloquea'})")
     return "\n".join(L)
 
 
