@@ -159,6 +159,15 @@ def count_procs(lines):
     return {k: sum(1 for l in lines if re.search(p, l)) for k, p in PROCS}
 
 
+def proc_age(lines, key="solana"):
+    """seconds since the matching process started (ps etimes), None if unknown: right after a restart the status file is still old"""
+    pat = dict(PROCS).get(key)
+    pid = next((l.split()[0] for l in (lines or []) if pat and re.search(pat, l)), None)
+    if not pid: return None
+    try: return int(subprocess.run(["ps", "-o", "etimes=", "-p", pid], capture_output=True, text=True, timeout=5).stdout.strip())
+    except Exception: return None
+
+
 def pgrep():
     try: return subprocess.run(["pgrep", "-af", "python3|run_forever"], capture_output=True, text=True, timeout=5).stdout.splitlines()
     except Exception: return None
@@ -169,7 +178,8 @@ def gather(root=ROOT, hours=24, now=None, procs=None):
     now = now or time.time(); since = now - hours * 3600; P = lambda *a: os.path.join(root, *a)
     st = jload(P("status_solana.json")) or {}
     stl = jload(P("state_solana_live.json")) or {}
-    D = dict(now=now, hours=hours, root=root, procs=count_procs(pgrep() if procs is None else procs), status=st,
+    plines = pgrep() if procs is None else procs
+    D = dict(now=now, hours=hours, root=root, procs=count_procs(plines), sol_age=proc_age(plines) if procs is None else None, status=st,
              status_age=(now - st["ts"]) if isinstance(st.get("ts"), (int, float)) else None, state=stl,
              wallet_file=os.path.exists(P("solana_wallet.json")), kill_file=os.path.exists(P("KILL_solana")),
              stop_file=os.path.exists(P("STOP")) or os.path.exists(P("STOP_solana")), st_key=key_set(root, "SOLANATRACKER_API_KEY"),
@@ -218,7 +228,10 @@ def verdict(D):
     elif D.get("autostart") and pr.get("vigilante") == 0:
         v.append("⚠ El vigilante oculto no corre: el bot se parará al cerrar la ventana de Ubuntu. Arreglo: tools/autostart.sh start (o cerrar sesión en Windows y volver a entrar).")
     elif sol and sol > 1: v.append(f"⚠ Hay {sol} copias del bot de Solana (debería haber 1): relanza con el comando de instalación.")
-    if sol and D["status_age"] is not None and D["status_age"] > 300: v.append(f"⚠ El bot corre pero su estado no se actualiza desde hace {ago(D['status_age'])} (posible cuelgue; el operador lo reinicia cada hora).")
+    if sol and D["status_age"] is not None and D["status_age"] > 300:
+        if D.get("sol_age") is not None and D["sol_age"] < 900 and D["status_age"] > D["sol_age"]:
+            v.append(f"El bot de Solana arrancó hace {ago(D['sol_age'])}: está haciendo su primer escaneo (puede tardar unos minutos); repite el diagnóstico en 10 min.")
+        else: v.append(f"⚠ El bot corre pero su estado no se actualiza desde hace {ago(D['status_age'])} (posible cuelgue; el operador lo reinicia cada hora).")
     if D["stop_file"]: v.append("⚠ Hay un fichero STOP o STOP_solana: el supervisor no relanza el bot de Solana.")
     if not st:
         v.append("Solana sin estado: el bot no ha arrancado todavía (no hay status_solana.json)" + ("" if D["wallet_file"] else "; además falta solana_wallet.json, sin él solo operaría en papel") + "."); return v

@@ -151,3 +151,11 @@ def test_watchdog_missing_with_autostart_is_flagged(tmp_path, monkeypatch):
     assert "⚠ El vigilante oculto no corre" in out and "vigilante ✖" in out
     _, out = run(d, procs=PROCS_OK)
     assert "vigilante ✓" in out and "El vigilante oculto no corre" not in out
+
+
+def test_recent_start_is_not_reported_as_hung(tmp_path):
+    d = make(tmp_path)
+    st = json.load(open(os.path.join(d, "status_solana.json"))); st["ts"] = NOW - 3600 * 18; json.dump(st, open(os.path.join(d, "status_solana.json"), "w"))
+    D = dg.gather(d, 24, now=NOW, procs=PROCS_OK); D["sol_age"] = 120
+    assert any("está haciendo su primer escaneo" in x for x in dg.verdict(D)) and not any("posible cuelgue" in x for x in dg.verdict(D))
+    D["sol_age"] = 5000; assert any("posible cuelgue" in x for x in dg.verdict(D))
