@@ -1,4 +1,5 @@
-"""Brain v2: logistic model (numpy), pessimistic probability, cost-aware EV with the director's floor, model choice by OOS evidence."""
+"""Brain v2: logistic model (numpy), pessimistic probability, cost-aware EV with the director's floor, model choice by OOS evidence
+(v3: the choice is deployed only after two consecutive OOS wins; see test_learn_picks_the_logistic_model_only_when_it_beats_beta_oos)."""
 import json, os, math
 import pytest
 import brain
@@ -40,18 +41,27 @@ def test_pessimistic_probability_and_cost_aware_ev():
 
 
 def test_learn_picks_the_logistic_model_only_when_it_beats_beta_oos(tmp_path, monkeypatch):
+    """v3 (deliberate change of a v2 internal): the OOS winner is recorded on every refit (oos.winner / oos.models_hist) but the
+    deployed model_choice only switches after SWITCH_WINS consecutive refits name the same winner; v2 switched on the first one.
+    The winner rule itself is still the v2 rule: beat Beta's policy return (>= 8 trades) AND Beta's Brier, now on every fold."""
     monkeypatch.chdir(tmp_path)
     data = planted(400, seed=3)
     b = brain.Brain.__new__(brain.Brain); b.st = {"active": False, "active_votes": 0}; b.ctx = {}; b.path = str(tmp_path / "brain_state.json")
     monkeypatch.setattr(brain.Brain, "build_dataset", lambda s, cfg, max_fetch=40: data)
     out = brain.Brain.learn(b, dict(C, brain_ev_min=0.01))
-    oos = out["oos"]; assert set(oos["models"]) >= {"beta"} and oos["model_choice"] in ("beta", "logit") and oos["policy"] == "ev>0.01 and score>=45"
+    oos = out["oos"]; assert set(oos["models"]) >= {"beta"} and oos["model_choice"] == "beta" and oos["policy"] == "ev>0.01 and score>=45"   # first refit: never a switch
+    assert oos["winner"] in ("beta", "logit", "ridge") and oos["models_hist"] == [oos["winner"]] and oos["switched"] is False
     if "logit" in oos["models"]:
         L, B = oos["models"]["logit"], oos["models"]["beta"]
-        if oos["model_choice"] == "logit": assert L["avg_ret_%"] > (B["avg_ret_%"] or -1e9) and L["brier"] <= B["brier"]
-        else: assert not (L["avg_ret_%"] is not None and L["trades"] >= 8 and (B["avg_ret_%"] is None or L["avg_ret_%"] > B["avg_ret_%"]) and L["brier"] <= B["brier"])
+        if oos["winner"] == "logit": assert L["avg_ret_%"] > (B["avg_ret_%"] or -1e9) and L["brier"] <= B["brier"] and L["trades"] >= 8
+        elif oos["winner"] == "beta": assert not (L["avg_ret_%"] is not None and L["trades"] >= 8 and (B["avg_ret_%"] is None or L["avg_ret_%"] > B["avg_ret_%"]) and L["brier"] <= B["brier"]
+                                                  and all(f["models"]["logit"]["avg_ret_%"] is not None and (f["models"]["beta"]["avg_ret_%"] is None or f["models"]["logit"]["avg_ret_%"] > f["models"]["beta"]["avg_ret_%"]) for f in out["folds"]))
     assert out["calibration"] and all(0 <= c["win_rate"] <= 1 and c["n"] > 0 for c in out["calibration"])
-    st = json.load(open(b.path)); assert st["model_choice"] == out["model_choice"] and ("logit" in st) == (st["model_choice"] == "logit" or "logit" in st)
+    st = json.load(open(b.path)); assert st["model_choice"] == out["model_choice"] == "beta"
+    out2 = brain.Brain.learn(b, dict(C, brain_ev_min=0.01)); w = out2["oos"]["winner"]
+    if w != "beta" and out2["oos"]["models_hist"] == [w, w]: assert out2["model_choice"] == w and out2["oos"]["switched"] is True and out2["active"] is False
+    else: assert out2["model_choice"] == "beta"
+    assert json.load(open(b.path))["model_choice"] == out2["model_choice"] and ("logit" in json.load(open(b.path))) == ("logit" in out2)
 
 
 def test_learn_without_numpy_falls_back_to_beta(tmp_path, monkeypatch):
