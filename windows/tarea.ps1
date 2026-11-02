@@ -4,7 +4,7 @@
 $ErrorActionPreference = "Stop"
 $user = (wsl.exe -d Ubuntu -e whoami).Trim()
 if (-not $user) { throw "No encuentro la distribucion Ubuntu en WSL (wsl --install -d Ubuntu)" }
-$cmd = "cd ~/ai-trading-bot && rm -f STOP && exec ./run_forever.sh"
+$cmd = "cd ~/ai-trading-bot && rm -f STOP && exec tools/keepalive.sh"   # vigilante: mantiene viva la distro y relanza el supervisor
 $action = New-ScheduledTaskAction -Execute "wsl.exe" -Argument "-d Ubuntu -u $user -e bash -lc `"$cmd`""
 $trigger = New-ScheduledTaskTrigger -AtLogOn
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 5 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries

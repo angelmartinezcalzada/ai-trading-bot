@@ -35,10 +35,11 @@ if ! grep -q '^SOLANATRACKER_API_KEY=.' keys.env 2>/dev/null && [ -r /dev/tty ];
   else echo "== sin clave de Solana Tracker: el bot escanea y aprende, pero no compra en real"; fi
   K=""
 fi
-rm -f STOP
-if ./tools/autostart.sh on; then echo "== el bot corre en segundo plano y arrancará solo al iniciar sesión en Windows"
-else nohup setsid ./run_forever.sh >/dev/null 2>&1 & echo "== AVISO: sin arranque automático; el bot se parará si cierras esta ventana de Ubuntu (pega estas líneas a Claude)"; fi
-echo "== arrancado; esperando 40 s para el diagnóstico"; sleep 40
+rm -f STOP; nohup setsid ./run_forever.sh >/dev/null 2>&1 < /dev/null &      # el bot arranca YA; el vigilante (abajo) lo mantiene vivo después
+echo "== bot arrancado; instalando el vigilante oculto de Windows (puede tardar hasta 3 min la primera vez)"
+if ./tools/autostart.sh on; then echo "== el bot seguirá vivo aunque cierres esta ventana y arrancará solo al iniciar sesión en Windows"
+else echo "== AVISO: el bot corre, pero se parará si cierras esta ventana de Ubuntu (pega estas líneas a Claude)"; fi
+echo "== esperando 30 s para el diagnóstico"; sleep 30
 python3 tools/diagnostico.py 2>/dev/null || ./status.sh 2>/dev/null | head -8 || true
 echo; echo "== listo. Panel desde Windows: http://localhost:8787/   (contraseña: cat ~/ai-trading-bot/dashboard_password.txt; no la pegues en chats)"
 echo "== Solana pasa a REAL sola en cuanto solana_wallet.json tiene >= 0,05 SOL (para impedirlo: touch ~/ai-trading-bot/KILL_solana)"

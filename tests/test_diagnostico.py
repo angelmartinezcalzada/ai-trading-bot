@@ -8,7 +8,7 @@ NOW = time.mktime((2026, 11, 2, 12, 0, 0, 0, 0, -1))
 def lt(sec_ago): return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(NOW - sec_ago)) + ",123"
 def iso(sec_ago): return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(NOW - sec_ago))
 PROCS_OK = ["1 python3 bot.py --exchange solana --live", "2 python3 bot.py --exchange binance", "3 python3 bot.py --exchange coinbase", "4 python3 dashboard.py",
-            "5 python3 insider.py daemon", "6 python3 insider_ws.py", "7 python3 trend_spot.py --loop", "8 /bin/bash ./run_forever.sh", "9 /bin/bash ./run_forever.sh"]
+            "5 python3 insider.py daemon", "6 python3 insider_ws.py", "7 python3 trend_spot.py --loop", "8 /bin/bash ./run_forever.sh", "9 /bin/bash ./run_forever.sh", "13 /bin/bash tools/keepalive.sh"]
 
 
 def log_lines(extra=()):
@@ -143,3 +143,11 @@ def test_crash_loop_and_missing_autostart_are_explained(tmp_path, monkeypatch):
     vbs = os.path.join(d, "TradingBot.vbs"); open(vbs, "w").write("x"); open(os.path.join(d, ".autostart"), "w").write(vbs + "\n")
     _, out = run(d, procs=PROCS_OK)
     assert "Arranque automático: sí" in out and "Sin arranque automático" not in out
+
+
+def test_watchdog_missing_with_autostart_is_flagged(tmp_path, monkeypatch):
+    d = make(tmp_path); vbs = os.path.join(d, "TradingBot.lnk"); open(vbs, "w").write("x"); open(os.path.join(d, ".autostart"), "w").write(vbs + "\n")
+    _, out = run(d, procs=[l for l in PROCS_OK if "keepalive" not in l])
+    assert "⚠ El vigilante oculto no corre" in out and "vigilante ✖" in out
+    _, out = run(d, procs=PROCS_OK)
+    assert "vigilante ✓" in out and "El vigilante oculto no corre" not in out

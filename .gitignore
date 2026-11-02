@@ -48,3 +48,4 @@ data/st_cache.json
 .autostart
 .supervisor.lock
 .run_forever.lock
+.keepalive.lock

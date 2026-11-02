@@ -1010,3 +1010,10 @@ Backups: memebot.py / copytrade_paper.py / config.json / DECISIONS.md .bak_rugpu
 - `tools/autostart.sh` v2: el arranque en Inicio es un acceso directo creado con PowerShell (no depende de VBScript, que Windows está retirando; .vbs solo como respaldo), se lanza a través del explorador de Windows (proceso independiente de la ventana de Ubuntu), luego PowerShell y luego wscript, cada intento verificado; si nada funciona, imprime el error y las últimas líneas de supervisor.log.
 - install.sh decía "Modo real de Solana: … nunca automática", lo cual era falso (go_live pasa a real con ≥ 0,05 SOL en el wallet); corregido.
 - Tests: 279.
+
+## 2026-11-02 17:03 (Madrid) — Tercer intento en el PC de Àngel: vigilante oculto en lugar de lanzar el supervisor oculto (Claude)
+- Salida: el acceso directo de Inicio se creó con PowerShell (bien), pero ni el explorador ni PowerShell dejaron el supervisor vivo en 30 s; PowerShell mostraba "Preparando módulos para el primer uso" (su primer arranque puede tardar). El instalador cayó a nohup, que muere al cerrar la ventana.
+- Rediseño sin carreras: el instalador arranca el supervisor YA (nohup setsid) y aparte lanza, oculto, `tools/keepalive.sh` (vigilante): una sesión de WSL que no termina, así la distro no se apaga al cerrar la ventana, y que cada 30 s relanza run_forever.sh si no corre y no hay STOP (un ./stop.sh manual se respeta). Si el vigilante tarda en aparecer, el bot ya está corriendo. El acceso directo de Inicio y windows/tarea.ps1 lanzan el vigilante. Esperas de hasta 90 s por método con progreso, `$ProgressPreference='SilentlyContinue'` para no ensuciar la salida, errores de PowerShell legibles (sin CLIXML).
+- Probado en la sesión con un supervisor de prueba: un solo vigilante (candado propio en el descriptor 8, que el supervisor no hereda), relanza tras matar el supervisor, no relanza con STOP.
+- Diagnóstico: proceso "vigilante" y aviso si el arranque automático está puesto pero el vigilante no corre.
+- Tests: 280.

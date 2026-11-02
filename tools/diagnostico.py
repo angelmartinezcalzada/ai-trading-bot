@@ -14,7 +14,7 @@ URL = re.compile(r"((?:https?|wss?)://[^/\s'\"?]+)[^\s'\"]*")
 PY = r"^\d+ \S*python3?(\.\d+)? "                         # 'PID python3 …' / 'PID /usr/bin/python3.12 …': the process itself, never a wrapper shell
 PROCS = [("solana", PY + r"bot\.py --exchange solana( |$)"), ("binance", PY + r"bot\.py --exchange binance( |$)"), ("coinbase", PY + r"bot\.py --exchange coinbase( |$)"),
          ("panel", PY + r"dashboard\.py"), ("insiders", PY + r"insider\.py daemon"), ("WS insiders", PY + r"insider_ws\.py"), ("tendencia", PY + r"trend_spot\.py"),
-         ("supervisor", r"^\d+ \S*(bash|sh) \S*run_forever\.sh( |$)")]
+         ("supervisor", r"^\d+ \S*(bash|sh) \S*run_forever\.sh( |$)"), ("vigilante", r"^\d+ \S*(bash|sh) \S*keepalive\.sh( |$)")]
 BLOCK = [("slippage", "deslizamiento"), ("not sellable", "no vendible"), ("impact", "impacto de precio"), ("real round-trip", "coste ida y vuelta"), ("EV ", "EV < 3× coste")]
 
 
@@ -213,8 +213,10 @@ def verdict(D):
         v.append(f"✖ El bot de Solana se cae al arrancar: el supervisor lo relanzó {sup['bad_exits']} veces (último código {sup.get('last_code')})"
                  + (f"; último error: {D['crash']}" if D.get("crash") else "") + ".")
     elif sol == 0: v.append("✖ El bot de Solana NO está corriendo: relánzalo con el comando de instalación (wsl_bootstrap.sh).")
-    if D.get("autostart") is False and not pr.get("supervisor"):
+    if D.get("autostart") is False:
         v.append("⚠ Sin arranque automático: en Windows el bot muere al cerrar la ventana de Ubuntu. El comando de instalación lo instala (tools/autostart.sh).")
+    elif D.get("autostart") and pr.get("vigilante") == 0:
+        v.append("⚠ El vigilante oculto no corre: el bot se parará al cerrar la ventana de Ubuntu. Arreglo: tools/autostart.sh start (o cerrar sesión en Windows y volver a entrar).")
     elif sol and sol > 1: v.append(f"⚠ Hay {sol} copias del bot de Solana (debería haber 1): relanza con el comando de instalación.")
     if sol and D["status_age"] is not None and D["status_age"] > 300: v.append(f"⚠ El bot corre pero su estado no se actualiza desde hace {ago(D['status_age'])} (posible cuelgue; el operador lo reinicia cada hora).")
     if D["stop_file"]: v.append("⚠ Hay un fichero STOP o STOP_solana: el supervisor no relanza el bot de Solana.")
@@ -242,7 +244,7 @@ def report(D):
     sup = D.get("sup") or {}
     o.append(f"Arranque automático: {'sí' if D.get('autostart') else 'NO' if D.get('autostart') is False else 'n/a (no es WSL)'} · supervisor {H} h: {sup.get('starts', 0)} arranques del bot, {sup.get('bad_exits', 0)} caídas con error"
              + (f" · último error: {D['crash']}" if D.get("crash") and sup.get("bad_exits") else ""))
-    o.append("Procesos: " + (" · ".join(f"{k} {'✓' if n else '✖'}" + (f"×{n}" if n and n > 1 and k != "supervisor" else "") for k, n in pr.items()) if pr.get("solana") is not None else "no se pudo consultar (pgrep)"))
+    o.append("Procesos: " + (" · ".join(f"{k} {'✓' if n else '✖'}" + (f"×{n}" if n and n > 1 and k not in ("supervisor", "vigilante") else "") for k, n in pr.items()) if pr.get("solana") is not None else "no se pudo consultar (pgrep)"))
     w = st.get("wallet") if isinstance(st.get("wallet"), dict) else {}
     o.append(f"Solana: modo {'REAL' if st.get('mode') == 'live' else 'PAPEL' if st else '?'} · patrimonio {num(st.get('equity'))} $ (efectivo {num(st.get('cash'))} $) · hoy {sgn(st.get('day_pnl_pct'), 1)} %"
              + (f" · wallet {short(w.get('addr'))} {num(w.get('sol'), 4)} SOL" if w else "") + f" · estado hace {ago(D['status_age'])}" + (" · wallet: fichero presente" if D["wallet_file"] else " · sin solana_wallet.json"))
