@@ -6,8 +6,10 @@
  Executor -> simulated Jupiter quotes (real price impact) + network/priority fees; live = stub that refuses (no keys used)
  Risk     -> stop, trailing, max hold, max positions, daily kill switch
 Every candidate + filter result is appended to candidates_solana.jsonl for forward edge evaluation."""
-import os, sys, time, json, csv, logging, datetime as dt, requests, threading
+import os, sys, time, json, csv, logging, datetime as dt, requests, threading, inspect
 import director   # the memebot's own decision authority (only tightens: plays, windows, size, EV floor, exit profile)
+try: import context          # hourly market/news/breadth snapshot (context.py: load / stamp, parallel engineer 02-nov); optional: every use is None-safe
+except Exception: context = None
 log = logging.getLogger("meme")
 EX = "solana"; USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"; SOL = "So11111111111111111111111111111111111111112"
 STABLES = {"USDT", "USDC", "USDS", "PYUSD", "USDG", "USD1", "FDUSD", "USDE", "DAI", "EURC", "JUPSOL", "MSOL", "JITOSOL", "BSOL", "INF", "WSOL", "SOL", "CBBTC", "WBTC", "WETH"}
@@ -31,6 +33,49 @@ def get(url, timeout=15, retries=3, **p):
             time.sleep(1)
     return None
 def now_s(): return dt.datetime.now().strftime("%H:%M:%S")
+def hour_utc(now=None): return dt.datetime.fromtimestamp(time.time() if now is None else now, dt.timezone.utc).hour   # director gate + row 'hour_utc' (02-nov: UTC, like the context snapshot)
+def _accepts(fn, name):
+    """True when callable `fn` takes keyword `name` (or **kwargs). brain v3 / director / context are delivered by parallel engineers, so a
+    new kwarg is only passed when the installed signature has it; anything unexpected (builtin, mock) -> False = the old call."""
+    try: ps = inspect.signature(fn).parameters; return name in ps or any(p.kind == p.VAR_KEYWORD for p in ps.values())
+    except Exception: return False
+def merge_regime(btc_on, risk_off, ctx_doc):
+    """TIGHTEN-ONLY merge of today's inputs (status_binance btc_on, news.state() risk_off) with the context snapshot's regime block:
+    btc_on can only turn False (snapshot regime.btc_on is False), risk_off can only turn True (regime.risk_off, else news.risk_off, is True);
+    a missing / null snapshot field keeps the old value. Returns (btc_on, risk_off)."""
+    if not isinstance(ctx_doc, dict): return btc_on, risk_off
+    rg = ctx_doc.get("regime") if isinstance(ctx_doc.get("regime"), dict) else {}
+    nw = ctx_doc.get("news") if isinstance(ctx_doc.get("news"), dict) else {}
+    if rg.get("btc_on") is False: btc_on = False
+    ro = rg.get("risk_off") if rg.get("risk_off") is not None else nw.get("risk_off")
+    return btc_on, (True if ro is True else risk_off)
+CTX_KEYS = ("ts", "age_s", "sol_24h", "sol_4h", "sol_trend", "btc_on", "risk_off", "fng", "heat", "heat_ratio", "new_pools_1h", "breadth", "hour_utc", "dow",
+            "thr", "score_adj", "size_mult", "equity", "n_pos")   # rec['ctx'] keys (context.stamp contract); every one may be null
+def ctx_stamp(ctx_doc, thr=None, score_adj=None, size_mult=None, equity=None, n_pos=None, now=None):
+    """compact per-candidate context stamp for the row: context.stamp(snapshot, ...) when the module and a fresh snapshot exist, otherwise
+    every snapshot key null ('age_s': None = no snapshot) with only the bot-side values (thr, score_adj, size_mult, equity, n_pos). Never raises."""
+    base = {k: None for k in CTX_KEYS}; base.update(thr=thr, score_adj=score_adj, size_mult=size_mult, equity=equity, n_pos=n_pos)
+    if isinstance(ctx_doc, dict) and context is not None and callable(getattr(context, "stamp", None)):
+        try:
+            out = context.stamp(ctx_doc, thr=thr, score_adj=score_adj, size_mult=size_mult, equity=equity, n_pos=n_pos, now=now or time.time())
+            if isinstance(out, dict): base.update(out)
+        except Exception as e: log.debug("ctx stamp %s", e)
+    return base
+VETO_SOFT = {"top10"}
+VETO_POLICY = {"news_negative", "insider_negative", "director_gate", "brain_ev<=0", "honeypot/high_tax", "no_sellability_check", "pump_paper_only", "already_pumped_h1"}
+VETO_POLICY_PFX = ("no_momentum", "st_", "score<", "honeypot_rt")
+def veto_class(fails):
+    """{fail name: 'hard'|'policy'|'soft'} for the row. hard = token property / scam / permission / liquidity / missing-data veto (the token is
+    outside the tradable universe); policy = the bot's own thresholds and gates (momentum, news, insider, Solana Tracker, director, score, EV,
+    measured round-trip cost: they change with config, not with the token); soft = top10 (pump-play concentration). Unknown name -> hard (fail-closed)."""
+    out = {}
+    for f in fails or []:
+        f = str(f); out[f] = "soft" if f in VETO_SOFT else "policy" if (f in VETO_POLICY or f.startswith(VETO_POLICY_PFX)) else "hard"
+    return out
+ST_F_KEYS = {"snipers_pct": "snipers", "bundlers_pct": "bundlers", "insiders_pct": "insiders", "dev_pct": "dev", "holders": "holders", "migrated": "migrated", "age_h": "age_h", "creator_rugs": "creator_rugs"}
+def st_subset(f):
+    """row 'st_f': compact copy of solanatracker.features() (keys renamed to *_pct where they are percentages); None when the check ran without data"""
+    return {k: f.get(v) for k, v in ST_F_KEYS.items()} if isinstance(f, dict) else None
 import re as _re
 import scam
 def stable_fake(sym, px):
@@ -102,12 +147,48 @@ class Meme:
                 log.warning("[solana] DIRECTOR %s%s", "shadow (calculado, no aplicado)" if st and st.get("shadow") else why, (": " + ", ".join(f"{k} {a}->{b}" for k, a, b in changes)) if changes else "")
             s._dir_key, s._dir_c, s._dir_why = key, c, ("shadow" if st and st.get("shadow") else why); return c
         except Exception as e: log.warning("director apply %s (base config)", e); return dict(base)
+    def ctx_load(s):
+        """context.load('.') -> the hourly snapshot (data/context_now.json, fresh <= 2 h) or None. Module absent (ImportError at the top),
+        file missing / corrupt / stale or a broken loader -> None, never an exception: a context problem must not cost a scan cycle."""
+        if context is None or not callable(getattr(context, "load", None)): return None
+        try: d = context.load("."); return d if isinstance(d, dict) else None
+        except Exception as e: log.debug("context load %s", e); return None
+    def learn_cycle(s, c, cb):
+        """hourly body of the learn thread (step): brain refit, then the director. brain v3's learn(cfg, cfg_base=) labels with the BASE
+        config (cb) and judges the director-tightened policy (c); an older brain gets the old one-argument call (_accepts)."""
+        try: s.brain.learn(c, cfg_base=cb) if _accepts(s.brain.learn, "cfg_base") else s.brain.learn(c)
+        except Exception: log.exception("[brain] learn failed")   # a daemon thread that dies silently every hour looks like a frozen model
+        try: s.director_cycle()
+        except Exception: log.exception("[director] cycle failed")
     def director_cycle(s):
-        """hourly (learn thread): measure the evidence and write director_state.json; reload() applies it once out of shadow"""
+        """hourly (learn thread): measure the evidence and write director_state.json; reload() applies it once out of shadow.
+        brain v3 exposes `paths` ([(bars, rt)] per labelled row after learn) -> exit grid through eval_solana.sim (never looser than config);
+        the latest context snapshot goes as ctx= only when director.compute accepts it (parallel engineer adds the kwarg)."""
         data = None
         try: data = s.brain.build_dataset(dict(s.c), max_fetch=0)
         except Exception as e: log.info("[director] dataset: %s", e)
-        director.compute(".", dict(getattr(s, "c_base", s.c)), s.equity(), s.sol or 0.0, data=data)
+        kw = {}
+        paths = getattr(s.brain, "paths", None)
+        if paths:
+            try: import eval_solana; kw.update(paths=paths, sim=eval_solana.sim)
+            except Exception as e: log.info("[director] exit grid without sim: %s", e)
+        if _accepts(director.compute, "ctx"): kw["ctx"] = s.ctx_load()
+        director.compute(".", dict(getattr(s, "c_base", s.c)), s.equity(), s.sol or 0.0, data=data, **kw)
+    def seed_brain_context(s, path="data/context.jsonl", max_rows=2000):
+        """startup: brain v3 may expose a hook to seed its memecoin-heat baseline from the hourly context log (data/context.jsonl, one JSON object
+        per line, oldest first) instead of starting cold after every restart. Hook looked up with getattr, first of: brain.seed_heat,
+        brain.seed_context, brain.seed_heat_baseline, brain.update_context.seed; called as hook(rows). No hook (brain v2) -> False. Never raises."""
+        hook = next((getattr(s.brain, n) for n in ("seed_heat", "seed_context", "seed_heat_baseline") if callable(getattr(s.brain, n, None))), None)
+        hook = hook or getattr(getattr(s.brain, "update_context", None), "seed", None)
+        if not callable(hook) or not os.path.exists(path): return False
+        try:
+            rows = []
+            for l in open(path).readlines()[-max_rows:]:
+                try: r = json.loads(l)
+                except Exception: continue
+                if isinstance(r, dict): rows.append(r)
+            hook(rows); log.info("[brain] heat baseline seeded from %s (%d rows)", path, len(rows)); return True
+        except Exception as e: log.info("[brain] context seed skipped: %s", e); return False
     def buys_today(s):
         """number of BUY rows of today in this mode's ledger (director daily cap); cached 60 s"""
         if time.time()-getattr(s, "_bt_t", 0) < 60: return getattr(s, "_bt_n", 0)
@@ -323,14 +404,15 @@ class Meme:
         parts["insiders"] = -min(15, rc["insiders"]*3)                      # bundled / sniper networks (RugCheck)
         cb = rc["creator_bal"]/rc["supply"]*100 if rc.get("supply") else 0
         parts["dev_hold"] = -8 if cb > 5 else 0
-        wb = ws = bots = 0
+        wb = ws = bots = None                                                 # None = not fetched (the row logs whale_buys/whale_sells/bots as null); scoring treats it as 0 as before
         if p.get("pairAddress") and sum(parts.values()) >= c["min_score"]-15:   # only spend API calls on near-qualifiers
             wb, ws, bots = s.whales(p["pairAddress"])
-        parts["whales"] = min(10, wb*3) - min(10, ws*3)
-        parts["bots"] = -min(6, bots)
+        parts["whales"] = min(10, (wb or 0)*3) - min(10, (ws or 0)*3)
+        parts["bots"] = -min(6, bots or 0)
         sc = round(max(0, min(100, sum(parts.values()))), 1)
         comp = dict(liq=round(liq), vol_liq=round(vl, 2), b_s=f"{b1}/{s1}", h1=h1, m5=m5, age_h=round(age_h, 1), vel=round(vel, 2), ub5=ub5, ub1=ub1,
-                    holder_g=round(hg*100, 1), liq_g=round(lg*100, 1), top10_chg=round(tc, 2), whale_buys=wb, whale_sells=ws, bot_wallets=bots,
+                    holder_g=round(hg*100, 1), liq_g=round(lg*100, 1), top10_chg=round(tc, 2), whale_buys=wb or 0, whale_sells=ws or 0, bot_wallets=bots or 0,
+                    whales_fetched=wb is not None,   # parts.* keep the numeric 0 (brain.signals compares them); the honest null lives at the row top level (row_enrich)
                     creator_pct=round(cb, 2), parts={k: round(v, 1) for k, v in parts.items()})
         return sc, comp
     # ---------------- LIVE wallet (auto: >= live_min_sol SOL in solana_wallet.json) ----------------
@@ -719,9 +801,13 @@ class Meme:
                     if sym in (m, p["sym"]): s.sell(m, "manual_close")
             ctl["close"] = []; json.dump(ctl, open(f+".tmp", "w")); os.replace(f+".tmp", f)
     def ins_st(s):
+        """insider_status.json (insider.py) cached 30 s; {} when missing / unreadable / older than 900 s (unchanged). The file age is kept in
+        s._ins_age (int s, None = no file) and s._ins_stale even when the signal is dropped, so the row's insider.age_s / insider.stale say why."""
         if time.time()-getattr(s, "_ins_t", 0) > 30:
-            s._ins_t = time.time()
-            try: s._ins = json.load(open("insider_status.json")) if time.time()-os.path.getmtime("insider_status.json") < 900 else {}
+            s._ins_t = time.time(); s._ins, s._ins_age, s._ins_stale = {}, None, True
+            try:
+                age = time.time()-os.path.getmtime("insider_status.json"); s._ins_age = int(age)
+                if age < 900: s._ins = json.load(open("insider_status.json")); s._ins_stale = False
             except Exception: s._ins = {}
         return s._ins
     def promo(s):
@@ -731,7 +817,8 @@ class Meme:
         st = s.ins_st(); c = (st.get("conv") or {}).get(m, {})
         T = (st.get("tokens") or {}).get(m, {}); V = st.get("tok_valid") or {}
         return dict(conv=c.get("score", 0), n=c.get("n", 0), elite=c.get("elite", 0), sells=(st.get("sells_by_mint") or {}).get(m, 0),
-                    tok=T.get("score", 0), w=float(V.get("weight") or 0), whale_net=T.get("whale_net"), dev_sell=T.get("dev_sell"))
+                    tok=T.get("score", 0), w=float(V.get("weight") or 0), whale_net=T.get("whale_net"), dev_sell=T.get("dev_sell"),
+                    stale=bool(getattr(s, "_ins_stale", True)), age_s=getattr(s, "_ins_age", None))   # 02-nov: row says whether the zeros mean "no signal" or "no fresh file"
     def guard_loop(s):
         """profit protection: live positions marked every ~guard_s; locks net profit on volatile / reversing coins, partial on spikes"""
         import statistics as st_
@@ -855,18 +942,38 @@ class Meme:
                     time.sleep(2.2)
             except Exception as e: log.info("[solana] ai_loop: %s", e)
             time.sleep(30)
+    def status_extras(s):
+        """status(): F&G from the context snapshot (news.fng, else news_state.json), headline titles from news_state.json (the snapshot has none),
+        a compact 'context' block (fresh / ts / age_s / regime / heat_ratio / stale_n) and the brain v3 extras (model_choice, calibration,
+        active_votes, code_version) when brain.st has them. Local files only; every field None-safe."""
+        cx = getattr(s, "_ctx_doc", None); cx = cx if isinstance(cx, dict) else None
+        try: import news as _news; ns = _news.state() or {}
+        except Exception: ns = {}
+        cxn = cx.get("news") if cx and isinstance(cx.get("news"), dict) else {}
+        fng = cxn.get("fng")
+        if fng is None and isinstance(ns.get("fng"), dict): fng = ns["fng"].get("value")
+        heads = [str(h.get("title")) for h in (ns.get("top") or []) if isinstance(h, dict) and h.get("title")][:15]
+        age = int(time.time()-float(cx["ts"])) if cx and isinstance(cx.get("ts"), (int, float)) else None
+        ctx = {"fresh": cx is not None, "ts": cx.get("ts") if cx else None, "age_s": age, "regime": cx.get("regime") if cx and isinstance(cx.get("regime"), dict) else None,
+               "heat_ratio": (cx.get("market") or {}).get("heat_ratio") if cx and isinstance(cx.get("market"), dict) else None, "stale_n": len(cx.get("stale") or []) if cx else None}
+        bst = s.brain.st if isinstance(getattr(s.brain, "st", None), dict) else {}
+        model = {k: bst.get(k) for k in ("updated", "n_labelled", "active", "oos", "base", "avg_win", "avg_loss", "weights")}
+        model.update({k: bst[k] for k in ("model_choice", "calibration", "active_votes", "code_version") if k in bst})
+        return {"fng": fng, "headlines": heads, "context": ctx, "model": model}
     def status(s):
         eq = s.equity(); t = s.trades
+        try: xs = s.status_extras()
+        except Exception as e: log.debug("status extras %s", e); xs = {"fng": None, "headlines": [], "context": {"fresh": False, "ts": None, "age_s": None, "regime": None, "heat_ratio": None, "stale_n": None}, "model": {k: s.brain.st.get(k) for k in ("updated", "n_labelled", "active", "oos", "base", "avg_win", "avg_loss", "weights")}}
         pos = [{"sym": p["sym"], "side": "LONG", "strategy": f"meme s{p['score']}" + (" ½TP" if p.get("partial") else ""), "entry": p["entry"], "mark": p.get("mark", p["entry"]),
                 "stop": p.get("mark0", p["entry"])*(1-p.get("stop_pct", s.c["stop_pct"])), "trailing": p["best"]/p.get("mark0", p["entry"])-1 >= p.get("act_pct", s.c["trail_activate_pct"]), "tp": p.get("mark0", p["entry"])*(1+p.get("tp_pct", s.c["partial_tp_pct"])), "lv": p.get("lv"), "pump": s.ai_scores.get(m, {}).get("pump"), "exh": s.ai_scores.get(m, {}).get("exh"), "cost": p["cost"],
                 "pnl": p.get("mark", p["entry"])*p["raw"]/10**p["dec"]-p["cost"]+p.get("realized", 0), "pnl_pct": (p.get("mark", p["entry"])/p["entry"]-1)*100,
                 "age_min": (time.time()-p["t"])/60, "mint": m} for m, p in s.pos.items()]
         st = {"exchange": EX, "mode": "live" if s.live else "paper", "ts": time.time(), "equity": eq, "cash": s.cash, "day_pnl_pct": (eq/s.day_start-1)*100 if s.day_start else 0,
-              "halted": s.halted or (s.live and os.path.exists("KILL_solana")), "paused": s.paused, "wallet": getattr(s, "wallet", None), "live_min_sol": s.c.get("live_min_sol", 0.05), "pump_play": s.pump_stats(), "regime": {"regime": "memecoins", "sol_usd": round(s.sol, 2)}, "fng": None, "headlines": [], "delist": [], "listings": [],
+              "halted": s.halted or (s.live and os.path.exists("KILL_solana")), "paused": s.paused, "wallet": getattr(s, "wallet", None), "live_min_sol": s.c.get("live_min_sol", 0.05), "pump_play": s.pump_stats(), "regime": {"regime": "memecoins", "sol_usd": round(s.sol, 2)}, "fng": xs["fng"], "headlines": xs["headlines"], "delist": [], "listings": [], "context": xs["context"],
               "universe": len(s.cands), "positions": pos, "pending": [], "signals": s.signals[-60:], "movers": s.cands[:15],
               "smart": {"wallets": len(__import__("smart_money").load()), "items": sorted(getattr(s, "smart", {}).values(), key=lambda r: (-len(r["flags"]), -r["ts"]))[:15]},
               "ai_pump": sorted([{k: v[k] for k in ("sym", "pump", "exh", "sig_pump", "sig_exh", "held", "pump_parts", "exh_parts")} | {"age_s": round(time.time()-v["at"])} for v in s.ai_scores.values() if time.time()-v["at"] < 900], key=lambda x: -x["pump"])[:12],
-              "eval": s.eval_summary(), "brain": {"model": {k: s.brain.st.get(k) for k in ("updated", "n_labelled", "active", "oos", "base", "avg_win", "avg_loss", "weights")},
+              "eval": s.eval_summary(), "brain": {"model": xs["model"],
               "ctx": {k: v for k, v in s.brain.ctx.items() if k not in ("heat_hist", "words")}, "decisions": s.decisions[:25]}, "stats": {"closed_trades": len(t), "closed": len(t), "win_rate": (sum(1 for x in t if x > 0)/len(t)) if t else None, "net_pnl": sum(t)}}
         json.dump(st, open(f"status_{EX}.json.tmp", "w"), default=str); os.replace(f"status_{EX}.json.tmp", f"status_{EX}.json")
         if time.time()-s.eq_t >= 30:
@@ -924,13 +1031,8 @@ class Meme:
                 except Exception as e: log.warning("eval fail %s", e)
             threading.Thread(target=_ev, daemon=True).start()
         if time.time()-s.learn_t > 3600:
-            s.learn_t = time.time(); import threading
-            def _learn(c=dict(s.c)):
-                try: s.brain.learn(c)
-                except Exception: log.exception("[brain] learn failed")   # a daemon thread that dies silently every hour looks like a frozen model
-                try: s.director_cycle()
-                except Exception: log.exception("[director] cycle failed")
-            threading.Thread(target=_learn, daemon=True).start()
+            s.learn_t = time.time(); import threading   # body in learn_cycle (brain v3 cfg_base + director with paths/sim/ctx, signature-checked)
+            threading.Thread(target=s.learn_cycle, args=(dict(s.c), dict(getattr(s, "c_base", s.c))), daemon=True).start()
         log.info("[solana] equity=%.2f cash=%.2f open=%s SOL=%.2f", s.equity(), s.cash, [p["sym"] for p in s.pos.values()], s.sol)
         s.status()
     def _cache_io(s, save):
@@ -992,11 +1094,14 @@ class Meme:
         finally: s._cache_io(True)
     def _scan_cycle(s):
         c = s.c; mints = s.scan(); prs = s.pairs(mints); cands = []
+        ctx_doc = s._ctx_doc = s.ctx_load()   # once per cycle: the hourly context snapshot (None when the module / file is absent, stale or corrupt)
         try: btc_on = json.load(open("status_binance.json")).get("regime", {}).get("regime") != "bear"
         except Exception: btc_on = None
+        btc_on, _ = merge_regime(btc_on, None, ctx_doc)   # TIGHTEN-ONLY: the snapshot can switch btc_on OFF, never on (playbook, adapt and p['_btc_on'] see the merged value)
         ctx = s.brain.update_context(s.gctx + [{"name": p["baseToken"].get("name", ""), "sym": p["baseToken"]["symbol"]} for p in prs.values()], s.sol24, btc_on)
         pb = ctx["playbook"]
-        import news; ns = news.state(); nb = ns.get("coin_block", {}); nbo = ns.get("coin_boost", {})
+        import news; ns = dict(news.state() or {}); nb = ns.get("coin_block", {}); nbo = ns.get("coin_boost", {})
+        _, ns["risk_off"] = merge_regime(None, ns.get("risk_off"), ctx_doc)   # TIGHTEN-ONLY: the snapshot can add risk-off (thr +10, size x0.5), never remove it
         mt = time.time(); t0_ = time.time()
         # cheap prefilter from list data, then parallel RugCheck prefetch (cache TTL 10 min); vetoes unchanged
         ok_ = [m for m, p in prs.items() if ((p.get("liquidity") or {}).get("usd") or 0) >= c["min_liquidity_usd"] and ((p.get("volume") or {}).get("h1") or 0) >= c.get("pre_min_vol_h1", 2000)]
@@ -1014,7 +1119,8 @@ class Meme:
                 continue
             s.inline_manage()                            # keep managing open positions while scanning
             liq = (p.get("liquidity") or {}).get("usd") or 0
-            rec = {"ts": dt.datetime.now().isoformat(timespec="seconds"), "mint": m, "sym": p["baseToken"]["symbol"], "src": mints[m], "dex": p.get("dexId"),
+            ts_ = dt.datetime.now().isoformat(timespec="seconds")   # rid = mint:ts (row id for joins; its presence marks a FULL row: logc -> row_enrich)
+            rec = {"ts": ts_, "rid": f"{m}:{ts_}", "mint": m, "sym": p["baseToken"]["symbol"], "src": mints[m], "dex": p.get("dexId"),
                    "price": p.get("priceUsd"), "pair": p.get("pairAddress"), "liq": round(liq), "mcap": p.get("marketCap") or p.get("fdv"), "pass": False, "fail": []}
             if liq < c["min_liquidity_usd"]: rec["fail"].append("liq"); s.logc(rec); continue
             if stable_fake(rec["sym"], p.get("priceUsd")): rec["fail"].append("stable_impersonator"); s.logc(rec); continue
@@ -1056,6 +1162,7 @@ class Meme:
                 if liq >= c["min_liquidity_usd"] and ai_pump.is_ai(p["baseToken"].get("name", ""), rec["sym"], (p.get("info") or {}).get("description", ""), narr=rec["narr"]):
                     rec["ai"] = True; s.ai_watch[m] = dict(pair=p.get("pairAddress"), sym=rec["sym"], name=p["baseToken"].get("name", ""), src=rec["src"], dx=p, t=time.time())
             except Exception as e: log.debug("ai detect %s", e)
+            rec["score_brain"] = rec.get("score")   # the score brain.decide sees (insider-adjusted, before the X-buzz / ST bonuses); None on rows where decide never ran
             dec = s.brain.decide(rec, s.equity(), c); rec["brain"] = dec
             xa, xe = x_buzz_adj(m)   # X buzz: score/priority only, AFTER brain sizing; vetoes in f untouched
             if xa: rec["score_noX"] = sc; rec["score"] = sc = round(max(0, min(100, sc + xa)), 1); rec["x_adj"] = xa
@@ -1063,11 +1170,13 @@ class Meme:
                 try:
                     import solanatracker as _st
                     stv, stb, _r = _st.live_check(m, rec["sym"]); rec["st"] = {"veto": stv, "bonus": stb, "ok": _r is not None and _r.get("verdict") != "neutral"}
+                    rec["st_f"] = st_subset((_r or {}).get("f"))   # compact ST features for the dataset (None = the check ran without data)
                     if stv: f.extend(stv)
                     if stb: rec["score"] = sc = round(max(0, min(100, sc + stb)), 1); rec["st_adj"] = stb
                     log.info("[solana] ST check %s verdict=%s veto=%s bonus=%s", rec["sym"], (_r or {}).get("verdict"), stv, stb)
                 except Exception as e: log.warning("st live %s", e)
             thr = c["min_score"] + pb["score_adj"] + (c.get("news_riskoff_score_add", 10) if ns.get("risk_off") else 0) - (5 if nbo.get(rec["sym"].upper(), 0) > time.time() else 0)
+            rec["ctx"] = ctx_stamp(ctx_doc, thr=thr, score_adj=pb["score_adj"], size_mult=pb["size_mult"], equity=s.equity(), n_pos=len(s.pos))   # per-candidate context stamp (nulls without snapshot)
             if nb.get(rec["sym"].upper(), 0) > time.time() and not f: f.append("news_negative")
             # manipulated-pump play: coordinated accumulation but provably sellable; only soft (concentration/score) failures allowed
             setup = [k for k, ok in (("rug_insiders", rc["insiders"] >= 1), ("concentrated", rc["top10"] > c["max_top10_pct"]), ("insider_accum", I["conv"] >= 3),
@@ -1105,7 +1214,7 @@ class Meme:
                          "liq": liq if "liq" not in last or time.time()-last.get("t", 0) > 600 else last["liq"], "top10": rc["top10"] if "top10" not in last or time.time()-last.get("t", 0) > 600 else last["top10"],
                          "watch": time.time()+1800 if sc >= c["min_score"]-15 and not [x for x in f if not x.startswith("score")] else last.get("watch", 0), "cool": last.get("cool", 0)}
             if rec["pass"] and m not in s.pos:   # Director gate (plays / hourly window / daily cap): only ever tightens; logged as director_gate (not a veto for the dataset)
-                okd, whyd = director.entry_allowed(c, dt.datetime.now().hour, s.buys_today(), "pump" if rec.get("trigger") == "pump_play" else "insider_elite" if rec.get("trigger") == "insider_elite_group" else "scanner")
+                okd, whyd = s.director_gate(c, "pump" if rec.get("trigger") == "pump_play" else "insider_elite" if rec.get("trigger") == "insider_elite_group" else "scanner", rec, ctx_doc)
                 if not okd: rec["pass"] = False; f.append("director_gate"); rec["director"] = whyd; log.info("[solana] %s: %s", rec["sym"], whyd)
             if rec["pass"] and m not in s.pos and not s.halted and not s.paused and len(s.pos) < c["max_positions"] and s.seen.get(m, {}).get("cool", 0) < time.time():   # scam vetoes BEFORE the single log line (a later block used to log the same mint twice: pass=True then pass=False -> polluted eval/brain data)
                 try: sf0 = scam.check(m, rec["sym"], p.get("priceUsd"), c, rec.get("roundtrip_loss_pct"))
@@ -1206,11 +1315,38 @@ class Meme:
     def eval_summary(s):
         try: return json.load(open("eval_solana.json"))
         except Exception: return None
+    def director_gate(s, c, play, rec, ctx_doc=None):
+        """director.entry_allowed with the UTC hour (02-nov: the context snapshot and the director windows are UTC; the row records it as
+        'hour_utc') and the context snapshot as ctx= when the installed director accepts the kwarg. Returns (allowed, why)."""
+        hu = hour_utc(); rec["hour_utc"] = hu; n = s.buys_today()
+        if _accepts(director.entry_allowed, "ctx"): return director.entry_allowed(c, hu, n, play, ctx=ctx_doc)
+        return director.entry_allowed(c, hu, n, play)
+    def row_enrich(s, rec):
+        """every FULL candidate row leaves logc with the same extra keys (nulls allowed; 02-nov context work): veto_class {fail: hard|policy|soft}
+        (recomputed from the final fail list), ctx (context stamp: set with thr by _scan_cycle, else here without it), score_brain, rt_src
+        ('measured' only when the Jupiter round trip was quoted; nothing is quoted here), st_f, smart_flags (smart-money entry < 30 min old,
+        else None), whale_buys / whale_sells / bots (None = not fetched; parts.* keep 0 for brain.signals), hour_utc. Must not raise."""
+        rec["veto_class"] = veto_class(rec.get("fail") or [])
+        rec.setdefault("score_brain", None); rec.setdefault("st_f", None); rec.setdefault("hour_utc", hour_utc())
+        rec.setdefault("rt_src", "measured" if rec.get("roundtrip_loss_pct") is not None else None)
+        if not isinstance(rec.get("ctx"), dict):
+            try: eq, n = s.equity(), len(s.pos)
+            except Exception: eq, n = None, None
+            rec["ctx"] = ctx_stamp(getattr(s, "_ctx_doc", None), equity=eq, n_pos=n)
+        pp = rec.get("parts") if isinstance(rec.get("parts"), dict) else {}
+        ok = bool(pp.get("whales_fetched"))
+        rec["whale_buys"], rec["whale_sells"], rec["bots"] = (pp.get("whale_buys"), pp.get("whale_sells"), pp.get("bot_wallets")) if ok else (None, None, None)
+        sm = (getattr(s, "smart", None) or {}).get(rec.get("mint"))
+        rec["smart_flags"] = list(sm.get("flags") or []) if isinstance(sm, dict) and time.time()-float(sm.get("ts") or 0) < 1800 else None
     def logc(s, rec):
+        if "rid" in rec:   # FULL candidate row (rec literal in _scan_cycle): the same extra keys on every one; a failure there never loses the row
+            try: s.row_enrich(rec)
+            except Exception as e: log.debug("row enrich %s", e)
         with open(f"candidates_{EX}.jsonl", "a") as f: f.write(json.dumps(rec, default=str)+"\n")
     def run(s):
         try: s.risk_audit()
         except Exception as e: log.warning('risk_audit %s', e)
+        s.seed_brain_context()   # brain v3 heat baseline from data/context.jsonl (getattr hook; no-op with brain v2)
         s.ai_watch, s.ai_scores = {}, {}; import threading as _th; _th.Thread(target=s.ai_loop, daemon=True).start()
         s.smart = {}; _th.Thread(target=s.smart_loop, daemon=True).start(); _th.Thread(target=s.guard_loop, daemon=True).start()
         if s.c.get("exit_mode") == "volscale":                      # retro-fit per-coin levels to positions opened before
