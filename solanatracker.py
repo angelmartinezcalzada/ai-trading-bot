@@ -3,12 +3,14 @@ Endpoints: GET /tokens/{mint} (risk: snipers/bundlers/insiders/dev %, holders, p
            GET /deployer/{wallet} (creator's past tokens), GET /price?token={mint} (forward prices).
 Budget: <=1 req/1.2s, daily cap DAILY_CAP, token cache 15 min, deployer cache 6 h, price cache 5 min.
 Failure/missing key => neutral (None)."""
-import os, json, time, urllib.request
+import os, re, json, time, urllib.request
 BASE = "https://data.solanatracker.io"
 DAILY_CAP = int(os.environ.get("ST_DAILY_CAP", "300"))   # 01-nov: free plan ~10k/month = ~330/day; 400 exhausted the month early and the ALT gate went neutral all day
 CACHE_F = "data/st_cache.json"; SHADOW_F = "data/st_shadow.jsonl"; BUDGET_F = "data/st_budget.json"
 TTL = {"tokens": 3600, "deployer": 86400, "price": 300}   # 01-nov: longer cache (risk/creator data moves slowly)
 DAEMON_CAP = int(os.environ.get("ST_DAEMON_CAP", "60"))   # shadow daemon may not starve the live bot (research only: the bot keeps >= 240/day)
+INSIDER_CAP = int(os.environ.get("ST_INSIDER_CAP", "40"))   # insider_rank discovery/PnL (owner "insider"): research only, counted under "ni"
+TTL.update({"top_traders": 21600, "first_buyers": 86400, "pnl": 43200, "wallet": 21600})   # insider_rank endpoints (leaderboards/wallet PnL move slowly)
 OWNER = ["bot"]
 VETO_PCT = 22.0
 _last = [0.0]
@@ -32,7 +34,8 @@ def _budget_ok():
     if b.get("day") != day: b = {"day": day, "n": 0}
     if b["n"] >= DAILY_CAP: return False
     if OWNER[0] == "daemon" and b.get("nd", 0) >= DAEMON_CAP: return False
-    b["n"] += 1; b["nd"] = b.get("nd", 0) + (OWNER[0] == "daemon"); _dump(b, BUDGET_F); return True
+    if OWNER[0] == "insider" and b.get("ni", 0) >= INSIDER_CAP: return False
+    b["n"] += 1; b["nd"] = b.get("nd", 0) + (OWNER[0] == "daemon"); b["ni"] = b.get("ni", 0) + (OWNER[0] == "insider"); _dump(b, BUDGET_F); return True
 
 def get(path, kind, cache=None):
     cache = cache if cache is not None else _load(CACHE_F, {})
@@ -112,3 +115,29 @@ def live_check(mint, sym=None):
         return ["st_" + w for w in rec["why"]], (PRIO_BONUS if rec["prio"] and rec["verdict"] == "pass" else 0.0), rec
     except Exception:
         return [], 0.0, None
+
+# ---------- insider_rank wrappers (research, owner "insider", INSIDER_CAP/day). Response shapes are ASSUMED (not verifiable offline): each wrapper
+# returns the parsed JSON only when its top-level shape is plausible, else None, and never raises; field-level parsing is in insider_rank.parse_*. ----------
+_ADDR = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
+def _iget(path, kind, ok):
+    try: d = get(path, kind)
+    except Exception: return None
+    return d if ok(d) else None
+def _has_list(d, keys): return isinstance(d, list) or (isinstance(d, dict) and any(isinstance(d.get(k), list) for k in keys))
+def top_traders(page=1):
+    """GET /top-traders/all[/{page}] -> assumed {wallets: [{wallet, summary: {total, totalInvested, realized, unrealized, totalWins, totalLosses, winPercentage}}]} or a bare list."""
+    try: page = max(1, int(page))
+    except Exception: return None
+    return _iget("/top-traders/all" + (f"/{page}" if page > 1 else ""), "top_traders", lambda d: _has_list(d, ("wallets", "data", "traders")))
+def first_buyers(mint):
+    """GET /first-buyers/{token} -> assumed [{wallet, first_buy_time, last_transaction_time, held, sold, holding, realized, unrealized, total, total_invested}]."""
+    if not (isinstance(mint, str) and _ADDR.match(mint)): return None
+    return _iget(f"/first-buyers/{mint}", "first_buyers", lambda d: _has_list(d, ("buyers", "data", "wallets", "first_buyers")))
+def wallet_pnl(addr):
+    """GET /pnl/{wallet} -> assumed {tokens: {mint: {...}}, summary: {realized, unrealized, total, totalInvested, totalWins, totalLosses, winPercentage, averageBuyAmount}}."""
+    if not (isinstance(addr, str) and _ADDR.match(addr)): return None
+    return _iget(f"/pnl/{addr}", "pnl", lambda d: isinstance(d, dict) and (isinstance(d.get("summary"), dict) or isinstance(d.get("tokens"), (dict, list))))
+def wallet_info(addr):
+    """GET /wallet/{owner} -> assumed {tokens: [{token, balance, value, ...}], total, totalSol, timestamp}; any dict is returned as is."""
+    if not (isinstance(addr, str) and _ADDR.match(addr)): return None
+    return _iget(f"/wallet/{addr}", "wallet", lambda d: isinstance(d, dict))
