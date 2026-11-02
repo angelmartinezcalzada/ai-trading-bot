@@ -1,6 +1,6 @@
 """director.py: the invariant 'never looser than config' on random inputs, every decision function on synthetic evidence,
 and an end-to-end compute() on a temporary bot folder. Offline, no wallet, no network."""
-import json, os, random, time, csv
+import json, os, random, time, csv, calendar, sys, types
 import pytest
 import director as D
 from eval_solana import sim
@@ -16,7 +16,8 @@ def rand_state(rng):
             "min_score_eff": rng.choice([None, 30, 45, 55, 70]), "ev_min_eff": rng.choice([None, 0.005, 0.01, 0.03, 0.08]),
             "size_policy": {"target_usd": rng.choice([None, 0.0, 1.5, 4.8, 12.0]), "max_frac": rng.choice([None, 0.0, 0.03, 0.1, 0.25])},
             "exit_profile": {"hard_stop_pct": rng.choice([None, 3.0, 6.0, 9.0]), "trail_pct": rng.choice([None, 8.0, 12.0, 20.0])},
-            "windows": rng.sample(range(24), rng.randint(0, 24)), "max_trades_day": rng.choice([None, 0, 3, 50])}
+            "windows": rng.sample(range(24), rng.randint(0, 24)), "max_trades_day": rng.choice([None, 0, 3, 50]), "hours_utc": rng.choice([True, False, None]),
+            "regime_gate": rng.choice([None, {}, "garbage", {"sol_trend": ["up"]}, {"heat": ["hot", "normal"], "btc_on": [True, None, "false"]}, {"risk_off": "false"}])}
 
 
 def test_apply_never_loosens_any_risk_key():
@@ -32,6 +33,8 @@ def test_apply_never_loosens_any_risk_key():
             else: assert (not c2[k]) or cfg[k], (k, cfg[k], c2[k])
         assert c2["pump_play"] is False                                    # the director never puts the pump play live
         assert set(c2["director_windows"]) <= set(range(24)) and set(c2["director_plays"]) >= {"scanner", "insider_elite", "pump"}
+        g = c2["director_regime_gate"]; assert isinstance(g, dict) and all(isinstance(v, list) and "na" not in v and all(isinstance(x, str) for x in v) for v in g.values())
+        assert isinstance(c2["director_hours_utc"], bool)
         for k, old, new in changes: assert k in D.TIGHTER
 
 
@@ -72,12 +75,19 @@ def test_plays_decision_switches_on_evidence_and_never_puts_pump_live():
 
 
 def test_windows_from_data_keeps_unknown_hours_open_and_closes_negative_ones():
+    """state v2 (intended change): hours are UTC, so the rows are built with a UTC epoch (the old test used the machine's local time)"""
     data = []
     for hr in range(24):
-        for i in range(12): data.append({"t": time.mktime((2026, 10, 31, hr, 10 + i, 0, 0, 0, -1)), "ret": (-0.02 if hr in (3, 4) else 0.01), "score": 50})
+        for i in range(12): data.append({"t": calendar.timegm((2026, 10, 31, hr, 10 + i, 0)), "ret": (-0.02 if hr in (3, 4) else 0.01), "score": 50})
     hours, table = D.windows_from_data(data)
     assert 3 not in hours and 4 not in hours and len(hours) == 22 and table[3]["n"] == 12
     assert D.windows_from_data(data[:50])[0] == list(range(24))              # too small: unrestricted
+    # `hour_utc` wins over `t`: the rows of UTC hour 3 relabelled as hour 20 -> 3 reopens (n=0) and 20 (12 negative + 12 positive) closes
+    data2 = [dict(d, hour_utc=(20 if time.gmtime(d["t"]).tm_hour == 3 else time.gmtime(d["t"]).tm_hour)) for d in data]
+    hours2, table2 = D.windows_from_data(data2)
+    assert 3 in hours2 and 20 not in hours2 and 4 not in hours2 and table2[20]["n"] == 24 and table2[3]["n"] == 0
+    # rows without a usable hour do not vote
+    assert D.windows_from_data(data + [{"t": "garbage", "ret": -1.0}] * 50)[0] == hours
 
 
 def paths(n, seed):
@@ -139,3 +149,168 @@ def test_compute_end_to_end_writes_state_and_log(tmp_path):
     c2, ch = D.apply_director(BASE, st2)
     assert c2["pump_paper"] is False and c2["pump_play"] is False and c2["live_target_max_usd"] <= 5 and "director_windows" in c2
     assert "Director" in D.report(st2) and "pump" in D.report(st2)
+
+
+# ---------------------------------------------------------------- state v2: UTC hours, regime gate from the logged context, exit profile source
+def test_row_hour_utc_and_windows_ignore_the_machine_timezone():
+    t = calendar.timegm((2026, 10, 31, 3, 5, 0))
+    assert D.row_hour_utc({"t": t}) == 3 and D.row_hour_utc({"t": t, "hour_utc": 7}) == 7 and D.row_hour_utc({"t": t, "hour_utc": 24}) == 3   # out-of-range hour_utc: back to t
+    assert D.row_hour_utc({"t": "2026-10-31T13:05:00+02:00"}) == 11 and D.row_hour_utc({"t": "2026-10-31 23:10:00"}) == 23 and D.row_hour_utc({"t": "09:30"}) == 9
+    assert D.row_hour_utc({"t": "garbage"}) is None and D.row_hour_utc({"hour_utc": True}) is None and D.row_hour_utc({}) is None
+    if not hasattr(time, "tzset"): return
+    old = os.environ.get("TZ"); os.environ["TZ"] = "JST-9"; time.tzset()          # POSIX zone (UTC+9), no tzdata needed
+    try:
+        assert time.localtime(t).tm_hour == 12 and D.row_hour_utc({"t": t}) == 3
+        hours, table = D.windows_from_data([{"t": t + i, "ret": -0.02} for i in range(120)])
+        assert 3 not in hours and 12 in hours and table[3]["n"] == 120
+        p = os.path.join(os.path.dirname(__file__), "..", "_tmp_ledger_test.csv")
+        try:
+            write_ledger(p, [["2026-10-31T12:05:00", "solana", "S", "SELL", "1", "3", "0", "0.1", "meme:trail", "48"]])
+            assert D.ledger_rows(p, t + 10, 14)[0]["hour"] == 3                     # local 12:05 JST = 03:05 UTC
+        finally:
+            if os.path.exists(p): os.remove(p)
+    finally:
+        if old is None: os.environ.pop("TZ", None)
+        else: os.environ["TZ"] = old
+        time.tzset()
+
+
+def regime_rows():
+    t0 = calendar.timegm((2026, 10, 31, 12, 0, 0)); rows = []
+    rows += [{"t": t0 + i, "ret": -0.03, "ctx": {"sol_trend": "down", "btc_on": True, "risk_off": None, "heat": None}} for i in range(40)]                       # flat ctx dict
+    rows += [{"t": t0 + 100 + i, "ret": 0.02, "ctx": {"regime": {"sol_trend": "flat", "btc_on": False, "risk_off": (False if i < 5 else None), "heat": None}}} for i in range(60)]   # nested snapshot
+    rows += [{"t": t0 + 200 + i, "ret": -0.05, "ctx": {"sol_trend": "up"}} for i in range(8)]       # n < 10: insufficient evidence -> allowed
+    rows += [{"t": t0 + 300 + i, "ret": -0.01} for i in range(12)]                                    # no ctx at all -> 'na'
+    return rows
+
+
+def test_regime_from_data_closes_negative_values_keeps_small_samples_open_and_never_allows_unknown():
+    rows = regime_rows(); gate, info = D.regime_from_data(rows, BASE)
+    assert gate == {"sol_trend": ["up", "flat"], "btc_on": ["false"]}
+    assert info["closed"] == {"sol_trend": ["down"], "btc_on": ["true"]} and info["ungated"] == ["risk_off", "heat"]   # < 10 known rows -> no gate on that key
+    assert "na" not in gate["sol_trend"] and info["table"]["sol_trend"]["na"] == {"n": 12, "avg_%": -1.0} and info["table"]["btc_on"]["true"]["n"] == 40
+    assert info["table"]["risk_off"]["false"]["n"] == 5 and info["table"]["heat"] == {"na": {"n": 120, "avg_%": pytest.approx(-0.43, abs=0.01)}}
+    assert "2 claves" in info["note"] and "2 valores cerrados" in info["note"] and "risk_off, heat" in info["note"]
+    assert D.regime_from_data(rows[:60], BASE)[0] == {} and D.regime_from_data(None, BASE)[0] == {} and "sin puerta" in D.regime_from_data([], BASE)[1]["note"]
+    assert "down" in D.regime_from_data([dict(r, ret=0.0) for r in rows[:40]] + rows[40:], BASE)[0]["sol_trend"]      # n >= 10 and mean >= 0: open
+    assert D.regime_from_data(rows + [{"t": 0, "ret": None, "ctx": {"sol_trend": "flat"}}] * 5, BASE)[0] == gate       # non-numeric ret does not vote
+    assert D.regime_closed({"regime_gate": {"heat": ["hot"]}}) == {"heat": ["normal", "cold"]}                          # fallback without evidence
+
+
+def test_entry_allowed_regime_gate_fails_closed_without_fresh_context():
+    now = time.time(); c = dict(BASE, director_plays={"scanner": "on"}, director_windows=list(range(24)), director_hours_utc=True, director_max_trades_day=9,
+                                director_regime_gate={"sol_trend": ["up", "flat"], "btc_on": ["false"]})
+    ok = {"ts": now - 7199, "regime": {"sol_trend": "up", "btc_on": False, "risk_off": True, "heat": "hot"}}
+    assert D.entry_allowed(c, 10, 0) == (False, "director: contexto no disponible")                                                   # gate without snapshot
+    assert D.entry_allowed(c, 10, 0, ctx={"regime": ok["regime"]}, now=now) == (False, "director: contexto no disponible")            # no ts
+    assert D.entry_allowed(c, 10, 0, ctx=dict(ok, ts=now - 7201), now=now) == (False, "director: contexto no disponible")            # stale
+    assert D.entry_allowed(c, 10, 0, ctx=dict(ok, ts="hoy"), now=now)[0] is False and D.entry_allowed(c, 10, 0, ctx="x", now=now)[0] is False
+    assert D.entry_allowed(c, 10, 0, ctx=dict(ok, ts=now * 1000), now=now) == (False, "director: contexto no disponible")            # milliseconds / future clock: not fresh
+    assert D.entry_allowed(c, 10, 0, ctx=dict(ok, ts=now + 200), now=now) == (True, "ok")                                           # small clock skew tolerated
+    assert D.entry_allowed(c, 10, 0, ctx=ok, now=now) == (True, "ok")
+    assert D.entry_allowed(c, 10, 0, ctx=dict(ok, regime=dict(ok["regime"], sol_trend="down")), now=now) == (False, "director: regimen sol_trend=down cerrado")
+    assert D.entry_allowed(c, 10, 0, ctx=dict(ok, regime=dict(ok["regime"], btc_on=None)), now=now) == (False, "director: regimen btc_on=na cerrado")   # unknown never passes
+    assert D.entry_allowed(c, 10, 0, ctx={"ts": now, "sol_trend": "flat", "btc_on": "false"}, now=now) == (True, "ok")              # flat snapshot, string bool
+    assert D.entry_allowed(c, 10, 0, ctx={"ts": now, "regime": {"sol_trend": "FLAT", "btc_on": "False"}}, now=now) == (True, "ok")   # case-insensitive
+    assert D.entry_allowed(dict(c, director_regime_gate={"btc_on": ["na", "false"]}), 10, 0, ctx={"ts": now, "regime": {"btc_on": None}}, now=now)[0] is False   # 'na' in a list still never passes
+    assert D.entry_allowed(dict(c, director_regime_gate={"heat": "hot"}), 10, 0, ctx=ok, now=now) == (False, "director: regimen heat=hot cerrado")     # malformed list: closed
+    assert D.entry_allowed(dict(c, director_regime_gate=["x"]), 10, 0, ctx=ok, now=now)[0] is False
+    # the other gates still come first, and the hour reason says UTC when the state is v2
+    assert D.entry_allowed(dict(c, director_windows=[1]), 10, 0, ctx=ok, now=now) == (False, "director: hora 10 UTC fuera de ventana")
+    assert D.entry_allowed(dict(c, director_hours_utc=False, director_windows=[1]), 10, 0, ctx=ok, now=now) == (False, "director: hora 10 fuera de ventana")
+    assert D.entry_allowed(c, 10, 9, ctx=ok, now=now) == (False, "director: tope diario 9 operaciones alcanzado")
+    assert D.entry_allowed(c, 10, 0, play="insider_elite", ctx=ok, now=now) == (True, "ok") and D.entry_allowed(c, 10, 0, play="pump", ctx=ok, now=now)[0]
+
+
+def test_entry_allowed_uses_context_keys_when_the_snapshot_has_no_regime(monkeypatch):
+    fake = types.ModuleType("context"); fake.keys = lambda ctx: ("flat", None, False, "cold"); monkeypatch.setitem(sys.modules, "context", fake)
+    now = time.time(); c = dict(BASE, director_regime_gate={"sol_trend": ["flat"], "heat": ["cold", "normal"]})
+    assert D.entry_allowed(c, 10, 0, ctx={"ts": now, "sol": {"chg24": 1.0}}, now=now) == (True, "ok")
+    assert D.regime_values({"ts": now, "regime": {"sol_trend": None}})["sol_trend"] == "na" and D.regime_values({"heat": None})["heat"] == "na"   # known shape, unknown values: no fallback
+    c["director_regime_gate"]["btc_on"] = ["true", "false"]
+    assert D.entry_allowed(c, 10, 0, ctx={"ts": now, "sol": {"chg24": 1.0}}, now=now) == (False, "director: regimen btc_on=na cerrado")
+    fake.keys = lambda ctx: 1 / 0
+    assert D.entry_allowed(c, 10, 0, ctx={"ts": now, "sol": {}}, now=now) == (False, "director: regimen sol_trend=na cerrado")       # a broken context module never passes
+    fake.keys = lambda ctx: ("flat",)
+    assert D.entry_allowed(c, 10, 0, ctx={"ts": now, "sol": {}}, now=now)[0] is False                                               # wrong arity: ignored, unknown
+
+
+def test_entry_allowed_empty_gate_is_unchanged_behaviour():
+    c = dict(BASE, director_plays={"scanner": "on"}, director_windows=list(range(24)), director_max_trades_day=5, director_regime_gate={})
+    assert D.entry_allowed(c, 10, 0) == (True, "ok") and D.entry_allowed(c, 10, 0, ctx=None) == (True, "ok") and D.entry_allowed(c, 10, 5)[0] is False
+    assert D.entry_allowed(BASE, 3, 99, ctx={"ts": 1}) == (True, "ok")       # no director keys at all: base config
+
+
+def test_apply_director_normalises_the_regime_gate_and_flags_the_hour_unit():
+    now = time.time(); st = {"ts": now, "shadow": False, "regime_gate": {"sol_trend": ["Up", True, None, "flat"], "heat": "hot"}, "hours_utc": True, "windows": [1, 2]}
+    c, ch = D.apply_director(BASE, st)
+    assert c["director_regime_gate"] == {"sol_trend": ["flat", "true", "up"], "heat": []} and c["director_hours_utc"] is True and ch == []
+    assert D.entry_allowed(c, 1, 0, ctx={"ts": now, "regime": {"sol_trend": "up", "heat": "hot"}}, now=now) == (False, "director: regimen heat=hot cerrado")
+    assert D.entry_allowed(c, 1, 0, ctx={"ts": now, "regime": {"sol_trend": None, "heat": "hot"}}, now=now) == (False, "director: regimen sol_trend=na cerrado")
+    c, _ = D.apply_director(BASE, {"ts": now, "shadow": False, "regime_gate": "garbage"}); assert c["director_regime_gate"] == {} and c["director_hours_utc"] is False
+    c, _ = D.apply_director(BASE, dict(st, shadow=True)); assert "director_regime_gate" not in c                 # shadow: identity, nothing applied
+
+
+def test_load_state_v1_file_loads_with_defaults_and_compute_rewrites_it_as_v2(tmp_path):
+    root = str(tmp_path); now = time.time()
+    v1 = {"ts": now - 600, "first_run": now - 30 * 3600, "shadow": False, "version": 1, "plays": {"scanner": "on", "insider_elite": "on", "pump": "off"},
+          "min_score_eff": 50, "ev_min_eff": 0.012, "size_policy": {"target_usd": 3.84, "max_frac": 0.08}, "windows": [9, 10, 11],
+          "exit_profile": {"hard_stop_pct": 6.0, "trail_pct": 12.0, "why": "sin trayectorias: perfil de config"}, "max_trades_day": 4}
+    json.dump(v1, open(os.path.join(root, D.STATE_FILE), "w"))
+    st, why = D.load_state(root, now)
+    assert why == "ok" and st["version"] == 1 and st["hours_utc"] is False and st["regime_gate"] == {} and st["exit_profile"]["source"] == "config" and st["windows"] == [9, 10, 11]   # nothing converted
+    c, ch = D.apply_director(BASE, st)
+    assert c["director_windows"] == [9, 10, 11] and c["director_hours_utc"] is False and c["director_regime_gate"] == {} and c["min_score"] == 50
+    assert D.entry_allowed(c, 10, 0) == (True, "ok") and D.entry_allowed(c, 12, 0) == (False, "director: hora 12 fuera de ventana")   # empty gate: no context needed
+    assert "hora local, estado v1" in D.report(st) and "sin puerta" in D.report(st) and "salida: config" in D.summary_line(st)
+    json.dump({"ts": now, "exit_profile": {"hard_stop_pct": 4.0, "trail_pct": 8.0, "why": "replay OOS 1.2% vs config 0.4% (60 trayectorias)"}, "regime_gate": "x", "version": "2"}, open(os.path.join(root, D.STATE_FILE), "w"))
+    st, _ = D.load_state(root, now); assert st["version"] == 1 and st["hours_utc"] is False and st["exit_profile"]["source"] == "replay" and st["regime_gate"] == {}
+    json.dump(v1, open(os.path.join(root, D.STATE_FILE), "w"))
+    st2 = D.compute(root, BASE, 48.0, 96.0, now=now)                       # the next hourly run rewrites the file as v2 and keeps first_run / hysteresis
+    saved = json.load(open(os.path.join(root, D.STATE_FILE)))
+    assert st2["version"] == saved["version"] == 2 and st2["hours_utc"] is True and st2["first_run"] == pytest.approx(v1["first_run"]) and st2["shadow"] is False
+    assert D.load_state(root, now)[0]["version"] == 2
+
+
+def test_compute_with_paths_sim_and_ctx_wires_exit_grid_regime_gate_and_context(tmp_path):
+    root = str(tmp_path); now = time.time(); t0 = calendar.timegm((2026, 10, 31, 12, 0, 0))
+    data = [{"t": t0 + i * 60, "ret": (-0.03 if i % 3 == 0 else 0.02), "score": 55, "hour_utc": i % 24,
+             "ctx": {"sol_trend": ("down" if i % 3 == 0 else "up"), "btc_on": (i % 2 == 0), "risk_off": None, "heat": "normal"}} for i in range(150)]
+    ctx = {"ts": now - 60, "regime": {"sol_trend": "up", "btc_on": True, "risk_off": None, "heat": "normal"}}
+    st = D.compute(root, dict(BASE, max_hold_hours=3), 48.0, 96.0, now=now, data=data, paths=paths(200, 3), sim=sim, ctx=ctx)
+    assert st["version"] == 2 and st["hours_utc"] is True and st["windows"] == list(range(24))                         # ~6 rows per hour: no hour closes
+    assert st["regime_gate"] == {"sol_trend": ["up", "flat"], "btc_on": ["true", "false"], "heat": ["hot", "normal", "cold"]}
+    assert st["evidence"]["regime"]["closed"] == {"sol_trend": ["down"], "btc_on": [], "heat": []} and st["evidence"]["regime"]["ungated"] == ["risk_off"]
+    assert st["exit_profile"]["source"] in ("replay", "config") and st["evidence"]["exit_grid"] and st["exit_profile"]["hard_stop_pct"] <= 6 and st["exit_profile"]["trail_pct"] <= 12
+    assert st["evidence"]["context"] == {"ts": ctx["ts"], "age_s": 60, "fresh": True, "regime": {"sol_trend": "up", "btc_on": "true", "risk_off": "na", "heat": "normal"}}
+    line = D.summary_line(st); assert "regimen=3 claves/1 valores cerrados" in line and "salida: " + st["exit_profile"]["source"] in line and "ventana=24h UTC" in line
+    rep = D.report(st); assert "Régimen" in rep and "sol_trend: cerrado [down]" in rep and "down n=50" in rep and "risk_off (sin evidencia: sin puerta)" in rep and "Contexto actual" in rep and "fresco" in rep
+    saved = json.load(open(os.path.join(root, D.STATE_FILE))); assert saved["regime_gate"] == st["regime_gate"] and saved["version"] == 2 and saved["evidence"]["context"]["regime"]["btc_on"] == "true"
+    logl = json.loads(open(os.path.join(root, D.LOG_FILE)).readline()); assert {"key": "regime_gate", "before": {}, "after": st["regime_gate"]} in logl["changes"]
+    c, _ = D.apply_director(BASE, dict(st, shadow=False))
+    assert c["director_regime_gate"] == {"sol_trend": ["flat", "up"], "btc_on": ["false", "true"], "heat": ["cold", "hot", "normal"]} and c["director_hours_utc"] is True
+    assert D.entry_allowed(c, 5, 0, ctx=ctx, now=now) == (True, "ok") and D.entry_allowed(c, 5, 0, now=now) == (False, "director: contexto no disponible")
+    assert D.entry_allowed(c, 5, 0, ctx=dict(ctx, regime=dict(ctx["regime"], sol_trend="down")), now=now) == (False, "director: regimen sol_trend=down cerrado")
+    # a stale snapshot is recorded as not fresh (information only: compute never trades) and _diff stays quiet on an unchanged gate
+    st2 = D.compute(root, BASE, 48.0, 96.0, now=now + 60, data=data, ctx={"ts": now - 9000, "regime": ctx["regime"]}, write=False)
+    assert st2["evidence"]["context"]["fresh"] is False and st2["evidence"]["context"]["age_s"] == 9060 and "NO disponible" in D.report(st2)
+    assert D._diff(st, st2) == [] and D._diff({}, {"regime_gate": {}}) == [] and D._diff({"regime_gate": {}}, {"regime_gate": {"heat": ["hot"]}})[0]["key"] == "regime_gate"
+
+
+def test_compute_without_paths_sim_or_ctx_falls_back_to_config_and_no_gate(tmp_path):
+    root = str(tmp_path); now = time.time()
+    st = D.compute(root, BASE, 48.0, 96.0, now=now, data=None, write=False)
+    assert st["exit_profile"] == {"hard_stop_pct": 6.0, "trail_pct": 12.0, "source": "config", "why": "sin trayectorias: perfil de config"}
+    assert st["regime_gate"] == {} and st["evidence"]["context"] is None and st["evidence"]["regime"]["table"] == {} and st["windows"] == list(range(24)) and st["hours_utc"] is True
+    assert not os.path.exists(os.path.join(root, D.STATE_FILE))                                                         # write=False
+    assert "salida: config" in D.summary_line(st) and "regimen=0 claves/0 valores cerrados" in D.summary_line(st) and "- Régimen (puerta por contexto registrado): sin puerta (dataset 0" in D.report(st)
+    st = D.compute(root, BASE, 48.0, 96.0, now=now, paths=paths(100, 4), sim=None, write=False)                        # paths without sim: config profile
+    assert st["exit_profile"]["source"] == "config" and st["evidence"]["exit_grid"] == {}
+    st = D.compute(root, dict(BASE, max_hold_hours=3), 48.0, 96.0, now=now, paths=paths(30, 5), sim=sim, write=False)   # too few test paths: config profile, grid empty
+    assert st["exit_profile"]["source"] == "config" and st["evidence"]["exit_grid"] == {} and "trayectorias" in st["exit_profile"]["why"]
+    # a dataset >= 100 rows without any ctx: every key unknown -> no gate (never a blanket block), while the UTC hours still count
+    data = [{"t": calendar.timegm((2026, 10, 31, 3, 0, 0)) + i, "ret": -0.02} for i in range(120)]
+    st = D.compute(root, BASE, 48.0, 96.0, now=now, data=data, write=False)
+    assert st["regime_gate"] == {} and st["evidence"]["regime"]["ungated"] == list(D.REGIME_KEYS) and 3 not in st["windows"] and len(st["windows"]) == 23
+    assert st["evidence"]["regime"]["table"]["heat"] == {"na": {"n": 120, "avg_%": -2.0}}
+    c, _ = D.apply_director(BASE, dict(st, shadow=False)); assert D.entry_allowed(c, 4, 0) == (True, "ok") and D.entry_allowed(c, 3, 0)[0] is False
