@@ -159,3 +159,16 @@ def test_recent_start_is_not_reported_as_hung(tmp_path):
     D = dg.gather(d, 24, now=NOW, procs=PROCS_OK); D["sol_age"] = 120
     assert any("está haciendo su primer escaneo" in x for x in dg.verdict(D)) and not any("posible cuelgue" in x for x in dg.verdict(D))
     D["sol_age"] = 5000; assert any("posible cuelgue" in x for x in dg.verdict(D))
+
+
+def test_dns_failure_is_the_first_thing_reported(tmp_path, monkeypatch):
+    d = make(tmp_path)
+    monkeypatch.setattr(dg, "dns_check", lambda *a, **k: ["github.com", "api.dexscreener.com"])
+    D = dg.gather(d, 24, now=NOW, procs=PROCS_OK, net=True); out = dg.report(D)
+    assert "✖ Ubuntu no resuelve 2 de 7 direcciones de internet (github.com, api.dexscreener.com…)" in out and "Red (DNS): FALLA en github.com, api.dexscreener.com" in out
+    D = dg.gather(d, 24, now=NOW, procs=PROCS_OK); assert D["dns_bad"] == [] and "Red (DNS): ok" in dg.report(D)     # tests stay offline by default
+
+
+def test_dns_check_reports_unresolvable_names_without_blocking():
+    t0 = time.time(); bad = dg.dns_check(("nonexistent-host-for-test.invalid",), timeout=3.0)
+    assert bad == ["nonexistent-host-for-test.invalid"] and time.time() - t0 < 4.0

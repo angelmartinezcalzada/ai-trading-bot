@@ -168,13 +168,28 @@ def proc_age(lines, key="solana"):
     except Exception: return None
 
 
+DNS_HOSTS = ("github.com", "api.dexscreener.com", "api.geckoterminal.com", "lite-api.jup.ag", "api.rugcheck.xyz", "data.solanatracker.io", "api.mainnet-beta.solana.com")
+def dns_check(hosts=DNS_HOSTS, timeout=5.0):
+    """hosts that do NOT resolve (WSL DNS fails now and then: without names the bot cannot scan nor buy). Daemon threads: never blocks exit."""
+    import socket, threading
+    res = {}
+    def look(h):
+        try: socket.getaddrinfo(h, 443); res[h] = True
+        except Exception: res[h] = False
+    ts = [threading.Thread(target=look, args=(h,), daemon=True) for h in hosts]
+    for t in ts: t.start()
+    end = time.time() + timeout
+    for t in ts: t.join(max(0.0, end - time.time()))
+    return [h for h in hosts if res.get(h) is not True]
+
+
 def pgrep():
     try: return subprocess.run(["pgrep", "-af", "python3|run_forever"], capture_output=True, text=True, timeout=5).stdout.splitlines()
     except Exception: return None
 
 
 # ---------------------------------------------------------------- gather + verdict
-def gather(root=ROOT, hours=24, now=None, procs=None):
+def gather(root=ROOT, hours=24, now=None, procs=None, net=None):
     now = now or time.time(); since = now - hours * 3600; P = lambda *a: os.path.join(root, *a)
     st = jload(P("status_solana.json")) or {}
     stl = jload(P("state_solana_live.json")) or {}
@@ -193,6 +208,7 @@ def gather(root=ROOT, hours=24, now=None, procs=None):
     used = int(b.get("n") or 0) if b.get("day") == today else 0
     D["st_budget"] = dict(used=used, cap=cap, daemon=int(b.get("nd") or 0) if b.get("day") == today else 0, insider=int(b.get("ni") or 0) if b.get("day") == today else 0)
     D["st_exhausted"] = used >= cap
+    D["dns_bad"] = dns_check() if (net if net is not None else procs is None) else []   # real run: check DNS; tests (procs injected): offline
     D["brain"] = jload(P("brain_state.json")) or jload(P("data", "brain_state.json")) or {}
     D["director"] = jload(P("director_state.json")) or {}
     D["context"] = jload(P("data", "context_now.json")) or {}
@@ -232,6 +248,8 @@ def verdict(D):
         if D.get("sol_age") is not None and D["sol_age"] < 900 and D["status_age"] > D["sol_age"]:
             v.append(f"El bot de Solana arrancó hace {ago(D['sol_age'])}: está haciendo su primer escaneo (puede tardar unos minutos); repite el diagnóstico en 10 min.")
         else: v.append(f"⚠ El bot corre pero su estado no se actualiza desde hace {ago(D['status_age'])} (posible cuelgue; el operador lo reinicia cada hora).")
+    if D.get("dns_bad"):
+        v.append(f"✖ Ubuntu no resuelve {len(D['dns_bad'])} de {len(DNS_HOSTS)} direcciones de internet ({', '.join(D['dns_bad'][:3])}…): sin red el bot no escanea ni compra. Arreglo: en PowerShell  wsl --shutdown  y vuelve a abrir Ubuntu.")
     if D["stop_file"]: v.append("⚠ Hay un fichero STOP o STOP_solana: el supervisor no relanza el bot de Solana.")
     if not st:
         v.append("Solana sin estado: el bot no ha arrancado todavía (no hay status_solana.json)" + ("" if D["wallet_file"] else "; además falta solana_wallet.json, sin él solo operaría en papel") + "."); return v
@@ -299,6 +317,7 @@ def report(D):
                  + (f" · siguiendo {ins.get('tracked', '?')} wallets · estado hace {ago(now - ins['ts'])}" if isinstance(ins.get("ts"), (int, float)) else ""))
     gaps = [g for g in L["gaps"]]
     o.append(f"Actividad: {num(L['lines'], 0)} líneas de log en {H} h" + (f" · {len(gaps)} huecos > {GAP_S // 60} min (el mayor {num(max(g[1] for g in gaps) / 3600, 1)} h)" if gaps else " · sin huecos"))
+    o.append("Red (DNS): " + ("ok" if not D.get("dns_bad") else "FALLA en " + ", ".join(D["dns_bad"])))
     o.append(f"Errores {H} h: {L['errors']}" + (f" · último: {L['last_error']}" if L["last_error"] else ""))
     return "\n".join(o)
 

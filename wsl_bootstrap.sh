@@ -10,15 +10,23 @@ REPO="${REPO:-https://github.com/angelmartinezcalzada/ai-trading-bot.git}"; DIR=
 if ! command -v git >/dev/null || ! command -v python3 >/dev/null || ! python3 -m pip --version >/dev/null 2>&1; then
   echo "== instalando git y python (pide tu contraseña de Ubuntu)"; sudo apt-get update -qq; sudo apt-get install -y -qq git python3 python3-pip curl >/dev/null
 fi
+net_fail() {   # Ubuntu (WSL) no llega a GitHub: casi siempre es el DNS de WSL, que falla a ratos. No se ha tocado nada.
+  echo "== ERROR: Ubuntu no llega a GitHub ($1). No he cambiado nada en el bot."
+  echo "   Arreglo: abre PowerShell en Windows, ejecuta  wsl --shutdown  , vuelve a abrir Ubuntu y repite el comando."
+  exit 1
+}
+retry() { local i e; for i in 1 2 3 4 5; do e="$("$@" 2>&1)" && return 0; echo "== red: intento $i de 5 fallido (${e:0:100}); reintento en $((i * 4)) s"; sleep $((i * 4)); done; return 1; }
 if [ -d "$DIR/.git" ]; then
   echo "== actualizando $DIR (tus ajustes de config.json se conservan)"
-  cd "$DIR"; [ -f config.json ] && cp config.json config.local.json
+  cd "$DIR"
+  retry git fetch -q origin main || net_fail "git fetch"          # 02-nov: primero la red; antes se restauraban ficheros y luego fallaba git pull
+  [ -f config.local.json ] || { [ -f config.json ] && cp config.json config.local.json; }   # si una ejecución anterior se cortó, su copia (tus ajustes) se conserva
   # revisiones que una versión anterior del operador escribió en DECISIONS.md -> se conservan en DIARIO.md (diario local)
   if ! git diff --quiet -- DECISIONS.md 2>/dev/null; then git diff -- DECISIONS.md | grep '^+' | grep -v '^+++' | sed 's/^+//' >> DIARIO.md; echo "== revisiones locales movidas a DIARIO.md"; fi
   git checkout -q -- . 2>/dev/null || true        # ficheros del repo vuelven a su versión (el estado, el wallet y los CSV no están en git; config.json se fusiona después)
-  git pull -q
+  git reset -q --hard origin/main
   [ -f config.local.json ] && python3 tools/config_merge.py config.local.json config.json && rm -f config.local.json
-else echo "== clonando en $DIR"; git clone -q "$REPO" "$DIR"; fi
+else echo "== clonando en $DIR"; retry git clone -q "$REPO" "$DIR" || net_fail "git clone"; fi
 cd "$DIR"; chmod +x *.sh tools/*.py tools/*.sh 2>/dev/null || true
 echo "== parando cualquier instancia anterior (bots y supervisores)"; ./stop.sh >/dev/null 2>&1 || true; sleep 3
 pkill -f "run_foreve[r].sh" 2>/dev/null || true; pkill -f "python3 bot.p[y] --exchange" 2>/dev/null || true; pkill -f "python3 dashboar[d].py" 2>/dev/null || true; sleep 1

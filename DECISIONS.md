@@ -1017,3 +1017,9 @@ Backups: memebot.py / copytrade_paper.py / config.json / DECISIONS.md .bak_rugpu
 - Probado en la sesión con un supervisor de prueba: un solo vigilante (candado propio en el descriptor 8, que el supervisor no hereda), relanza tras matar el supervisor, no relanza con STOP.
 - Diagnóstico: proceso "vigilante" y aviso si el arranque automático está puesto pero el vigilante no corre.
 - Tests: 280.
+
+## 2026-11-02 20:24 (Madrid) — Fallo de red en el PC de Àngel durante la instalación: instalador más seguro y prueba de DNS (Claude)
+- Salida de Àngel: el instalador se descargó, pero `git pull` falló con "Could not resolve host: github.com": DNS intermitente de WSL.
+- Fallo del instalador corregido: restauraba los ficheros del repo (incluido config.json) ANTES de bajar la versión nueva; al cortarse ahí, la siguiente ejecución habría pisado la copia de los ajustes locales (config.local.json). Ahora primero `git fetch` con 5 reintentos; si no hay red, sale sin tocar nada y explica el arreglo (`wsl --shutdown` desde PowerShell). Una copia config.local.json que quedara de una ejecución cortada se conserva y se fusiona. `git reset --hard origin/main` sustituye a `git pull`; clone también con reintentos.
+- Diagnóstico: prueba de DNS de 7 direcciones que el bot necesita (GitHub, DexScreener, GeckoTerminal, Jupiter, RugCheck, Solana Tracker, RPC). Si falla, es lo primero que dice: sin nombres el bot no escanea ni compra.
+- Tests: 283.

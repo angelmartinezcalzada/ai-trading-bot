@@ -122,3 +122,12 @@ Ojo: el bot de Solana pasa a REAL solo en cuanto `solana_wallet.json` tiene ≥ 
 
 ## 24/7 en Windows sin administrador (02-nov)
 El bot lanzado desde la ventana de Ubuntu muere al cerrarla: WSL apaga la distro. El instalador ahora instala `tools/autostart.sh on`: un acceso directo `TradingBot` en la carpeta Inicio de Windows, creado con PowerShell (si no se puede, un `TradingBot.vbs`), que lanza el bot oculto dentro de WSL, lo mantiene vivo con la ventana cerrada y lo arranca solo al iniciar sesión. Al iniciar sesión puede verse un instante una ventana de PowerShell minimizada: es el arranque. Comprobar: `tools/autostart.sh status` o la línea "Arranque automático" del diagnóstico. Quitar: `tools/autostart.sh off`. Sigue haciendo falta que el PC no se suspenda ni se apague. Alternativa con administrador: `windows/tarea.ps1`.
+
+## Red de Ubuntu (DNS) en WSL (02-nov)
+Si un comando dice "Could not resolve host" o el diagnóstico muestra "Red (DNS): FALLA", Ubuntu se ha quedado sin DNS (pasa a ratos en WSL, sobre todo tras suspender el PC o cambiar de red). Arreglo habitual, en PowerShell de Windows: `wsl --shutdown`; luego abre Ubuntu y repite. Si vuelve a pasar a menudo, se puede fijar un DNS estable dentro de Ubuntu (pide tu contraseña):
+
+```bash
+printf '[network]\ngenerateResolvConf = false\n' | sudo tee -a /etc/wsl.conf >/dev/null && sudo rm -f /etc/resolv.conf && printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' | sudo tee /etc/resolv.conf >/dev/null && echo "DNS fijado"
+```
+
+Después, `wsl --shutdown` en PowerShell y abrir Ubuntu de nuevo. Para deshacerlo: quitar esas líneas de /etc/wsl.conf y borrar /etc/resolv.conf.
