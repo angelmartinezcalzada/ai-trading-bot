@@ -2,7 +2,8 @@
 """operador.py (no "operator": ese nombre es un módulo de la librería estándar). Operador automático: el "director financiero" que antes era una persona o una IA externa, ahora código.
 
 Cada hora (run_forever.sh) hace lo que hacía la revisión horaria: mira la salud de cada proceso, el patrimonio, los escaneos,
-los errores, el Director, el cerebro, el riesgo de Hyperliquid y el estado de las cuentas de token; lo escribe en DIARIO.md (diario local de la máquina, fuera de git) con el mismo formato que las revisiones
+los errores, el Director, el cerebro, el riesgo de Hyperliquid, el contexto de mercado (context.py: data/context_now.json y
+data/context.jsonl, leídos a través de dash_data), el ranking de insiders y el estado de las cuentas de token; lo escribe en DIARIO.md (diario local de la máquina, fuera de git) con el mismo formato que las revisiones
 anteriores de DECISIONS.md; guarda operator_state.json para el panel; y emite alerts.jsonl (y, si existe
 la variable ALERT_CMD, ejecuta ese comando con el texto de la alerta: webhook, Telegram, lo que sea).
 
@@ -40,6 +41,29 @@ def _load(path, default):
 
 
 # ---------------------------------------------------------------- review (pure)
+def market_line(C):
+    """One diary line from the dash_data `context` section (data/context_now.json): SOL/BTC 24 h, F&G, risk-off, heat, launches/h,
+    breadth. Pure and never invents: a missing file is 'sin contexto', a missing field is '?', a stale file is prefixed with its age."""
+    if not C.get("available"): return f"sin contexto ({C.get('error') or 'data/context_now.json ausente'})"
+    sol, btc, nw, mk, br, rg = (C.get(k) if isinstance(C.get(k), dict) else {} for k in ("sol", "btc", "news", "market", "breadth", "regime"))
+    N = lambda x: isinstance(x, (int, float)) and not isinstance(x, bool)
+    P = lambda x: f"{x:+.1f} %" if N(x) else "?"
+    yn = lambda b: "sí" if b is True else "no" if b is False else "?"
+    ro = nw.get("risk_off") if nw.get("risk_off") is not None else rg.get("risk_off")
+    ne, nu = br.get("n_entry"), br.get("n_universe")
+    amp = f"{ne if N(ne) else '?'}/{nu if N(nu) else '?'}" + (f" ({100 * ne / nu:.0f} %)" if N(ne) and N(nu) and nu > 0 else "")
+    parts = [f"SOL 24 h {P(sol.get('r24h'))} ({rg.get('sol_trend') or '?'})",
+             f"BTC 24 h {P(btc.get('r24h'))} ({'on' if rg.get('btc_on') is True else 'off' if rg.get('btc_on') is False else '?'}{', ' + btc['regime'] if btc.get('regime') else ''})",
+             f"F&G {nw.get('fng') if N(nw.get('fng')) else '?'}", f"riesgo-off {yn(ro)}",
+             f"calor {mk.get('heat') or '?'}" + (f" (×{mk['heat_ratio']:.2f})" if N(mk.get("heat_ratio")) else ""),
+             f"lanzamientos/h {mk.get('new_pools_1h') if N(mk.get('new_pools_1h')) else '?'}" + (f", graduaciones {mk['graduations_1h']}" if N(mk.get("graduations_1h")) else ""),
+             f"amplitud {amp}"]
+    s = " · ".join(parts)
+    if not C.get("fresh"): s = f"obsoleto ({(C.get('age_s') or 0) / 3600:.1f} h): " + s
+    if C.get("stale"): s += " · sin calcular: " + ", ".join(str(x) for x in C["stale"][:6])
+    return s
+
+
 def review(ov, cfg, now):
     """findings [{level: ok|info|warn|crit, code, msg}] + a summary dict from a dash_data overview. No side effects."""
     F = []; add = lambda level, code, msg: F.append({"level": level, "code": code, "msg": msg})
@@ -76,6 +100,23 @@ def review(ov, cfg, now):
     if errs: add("warn", "errors_1h", f"{len(errs)} error(es) en logs la última hora; último: {errs[0].get('ex')} {errs[0].get('msg', '')[:120]}")
     I = ov.get("insider") or {}
     if I.get("available") and not I.get("fresh"): add("warn", "insider_stale", f"insider_status.json obsoleto ({(I.get('age_s') or 0)/60:.0f} min)")
+    if I.get("available"):   # insider_rank.json (insider_rank.py): the wallet ranking the panel table and the convergence tiers come from
+        rk = I.get("rank") or {}
+        if not rk.get("available"): add("info", "insider_rank_stale", "sin insider_rank.json: insider_rank.py aún no ha puntuado las wallets (tabla de insiders vacía)")
+        elif not rk.get("fresh"): add("info", "insider_rank_stale", f"ranking de insiders obsoleto ({(rk.get('age_s') or 0)/3600:.1f} h; insider_rank.py debería correr cada hora)")
+    if br.get("available"):   # brain_state.json written by an older brain.py than the one on disk: the state may not match the code
+        if not br.get("code_version"): add("info", "brain_state_older_than_code", "brain_state.json sin code_version: estado de una versión anterior del cerebro (se regenera en el próximo reentreno)")
+        elif isinstance(br.get("code_newer_s"), (int, float)) and br["code_newer_s"] > 86400:
+            add("info", "brain_state_older_than_code", f"brain.py es {br['code_newer_s']/86400:.1f} d más nuevo que el último reentreno ({br.get('updated')}): el estado puede no corresponder al código")
+    # market context (context.py via dash_data): stale -> warn (alerts, deduped 6 h like every code); the rest are notes, never alerts
+    C = ov.get("context") or {}
+    if not C.get("available"): add("warn", "context_stale", "sin contexto de mercado: data/context_now.json ausente o ilegible (context.py no ha corrido)")
+    elif not C.get("fresh"): add("warn", "context_stale", f"contexto de mercado obsoleto ({(C.get('age_s') or 0)/3600:.1f} h): el memebot decide sin régimen actualizado")
+    else:
+        n6, k6 = C.get("riskoff_6h_n"), C.get("riskoff_6h")
+        if isinstance(n6, int) and n6 >= 6 and k6 == n6: add("info", "news_riskoff_6h", f"riesgo-off por noticias sostenido en las últimas {n6} filas horarias (el memebot sube el umbral +10 y reduce el tamaño ×0,5)")
+        mk = C.get("market") or {}; np_ = mk.get("new_pools_1h")
+        if isinstance(np_, int) and not isinstance(np_, bool) and np_ == 0 and mk.get("heat") == "cold": add("info", "market_dead", "mercado muerto: 0 pools nuevos en la última hora y calor 'cold' (pocas oportunidades; no es un fallo)")
     D = ov.get("director") or {}
     if not D.get("available"): add("info", "director_missing", "sin director_state.json: el Director aún no ha corrido (se recalcula)")
     elif not D.get("fresh"): add("warn", "director_stale", f"director_state.json obsoleto ({(D.get('age_s') or 0)/3600:.1f} h): se recalcula")
@@ -100,9 +141,11 @@ def review(ov, cfg, now):
                "scan": (f"{sc.get('ok')}/{sc.get('total')} con liquidez → eval {sc.get('eval')}, rugcheck {sc.get('rc_fetched')}/{sc.get('rc_needed')} en {sc.get('secs')} s" if sc.get("available") and sc.get("ok") is not None else "sin línea de escaneo"),
                "funnel": (f"{fu.get('rows')} candidatos, {fu.get('passed')} pasan; vetos: " + ", ".join(f"{r['reason']} {r['n']}" for r in (fu.get('by_fail') or [])[:4])) if fu.get("available") else "sin embudo",
                "director": (f"{'sombra' if D.get('shadow') else 'manda'}: jugadas {D.get('plays')}, score ≥ {D.get('min_score_eff')}, EV ≥ {100*(D.get('ev_min_eff') or 0):.2f} %, tamaño {(D.get('size_policy') or {}).get('target_usd')} $, {len(D.get('windows') or [])}/24 h, máx {D.get('max_trades_day')} op/día") if D.get("available") else "sin estado",
-               "brain": (f"{'activo' if br.get('active') else 'sombra'}, modelo {br.get('model_choice', 'beta')}, {br.get('n_labelled')} etiquetadas, OOS {br.get('oos')}") if (S.get("brain") or {}).get("available") else "sin estado",
+               "brain": (f"{'activo' if br.get('active') else 'sombra'}, modelo {br.get('model_choice') or 'beta'}" + (f" ({br['code_version']})" if br.get("code_version") else "")
+                         + f", {br.get('n_labelled')} etiquetadas, OOS {br.get('oos')}") if (S.get("brain") or {}).get("available") else "sin estado",
                "copytrade": (f"{(ov.get('copytrade') or {}).get('closed')} cierres, {(ov.get('copytrade') or {}).get('pnl')} $ papel") if (ov.get("copytrade") or {}).get("available") else "sin estado",
-               "hl": (f"paper {((HL.get('paper') or {}).get('deployment_id') or '?')}, riesgo Coinversa {rk.get('status') or 'sin fichero'}") if HL.get("available") else "sin ficheros"}
+               "hl": (f"paper {((HL.get('paper') or {}).get('deployment_id') or '?')}, riesgo Coinversa {rk.get('status') or 'sin fichero'}") if HL.get("available") else "sin ficheros",
+               "market": market_line(C)}
     return F, summary
 
 
@@ -167,6 +210,7 @@ def entry_text(findings, summary, actions, now, daily=None):
     lines.append("- Salud: " + ("; ".join(f"{'⛔' if f['level'] == 'crit' else '⚠'} {f['msg']}" for f in sal) if sal else "todos los procesos vivos y con status fresco; sin errores nuevos en logs"))
     if summary.get("legs"): lines.append("- Equity: " + " · ".join(summary["legs"]) + f". Hoy Solana: {summary['today']['n']} cierres, {summary['today']['pnl']:+.3f} $, {summary['today']['wins']} ganados.")
     lines.append(f"- Escaneo: {summary.get('scan')}. Embudo: {summary.get('funnel')}.")
+    if summary.get("market"): lines.append(f"- Mercado: {summary['market']}.")
     lines.append(f"- Director: {summary.get('director')}. Cerebro: {summary.get('brain')}.")
     lines.append(f"- Copytrade papel: {summary.get('copytrade')}. Hyperliquid: {summary.get('hl')}.")
     info = [f["msg"] for f in findings if f["level"] == "info"]
@@ -191,7 +235,10 @@ def daily_lines(root, ov, now):
     D = ov.get("director") or {}; ch = [x for x in (D.get("log") or []) if isinstance(x.get("t"), (int, float)) and now - x["t"] < 86400 and x.get("changes")]
     L.append(f"- Director 24 h: {len(ch)} cambios de estado; ahora {D.get('plays')} · {'sombra' if D.get('shadow') else 'manda'}")
     br = S.get("brain") or {}
-    L.append(f"- Cerebro: modelo {br.get('model_choice', 'beta')}, activo={br.get('active')}, OOS {br.get('oos')}")
+    L.append(f"- Cerebro: modelo {br.get('model_choice') or 'beta'}" + (f" ({br['code_version']})" if br.get("code_version") else "") + f", activo={br.get('active')}, OOS {br.get('oos')}")
+    C = ov.get("context") or {}; ro6 = C.get("riskoff_6h")
+    L.append("- Mercado (contexto horario de context.py): " + market_line(C) + (f"; riesgo-off en {ro6} de las últimas {C.get('riskoff_6h_n')} filas horarias" if isinstance(ro6, int) else "")
+             + (f"; {len(C['history'])} filas en el histórico de 24 h" if C.get("history") else ""))
     pend = ["pasar el memebot a papel si el PF real a 30 días sigue < 1 (hoy: " + str(k.get("profit_factor")) + ")",
             "pasar la pata Hyperliquid a real en la web de Keel solo con ≥150 $ y ≥21 días de paper con paridad",
             "mantener o apagar el Director (director_enabled) tras leer director_log.jsonl"]

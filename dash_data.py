@@ -11,13 +11,17 @@ Units worth knowing (passed through as the bot writes them):
   - solana.stats.win_rate is a fraction 0..1 (memebot); cex.<ex>.stats.win_rate is a percentage 0..100 (bot.py).
   - solana.kpi_30d.avg_loss is the mean of the losing SELL rows (a negative number); gross_loss is positive.
   - all `ts` are epoch seconds; `t` strings inside rows are the local-time ISO strings the bot wrote.
+  - context.sol/btc returns (r1h, r4h, r24h, rv24h) are percentages as context.py writes them; insider.wallets[].rel and
+    .part are fractions 0..1; booleans from context/rank files are kept strict (anything that is not a JSON bool -> null).
 Secrets (keys.env, solana_wallet.json, dashboard_password.txt, .flask_secret) are never read here.
 """
 import os, re, csv, json, time, math, socket, subprocess, collections, datetime as dt
 
 TAIL_CAP = 300_000     # bytes per tail read (contract: 300 KB)
 FRESH = {"status": 120, "equity": 300, "insider": 900, "copytrade": 900, "brain": 3 * 3600, "hl_risk": 2 * 3600,
-         "candidates": 900, "log": 900, "supervisor": 3600, "eval": 2 * 3600, "director": 3 * 3600, "operator": 2 * 3600, "trend": 1800}
+         "candidates": 900, "log": 900, "supervisor": 3600, "eval": 2 * 3600, "director": 3 * 3600, "operator": 2 * 3600, "trend": 1800,
+         "context": 2 * 3600, "insider_rank": 2 * 3600}
+HEAT, TREND, BTC_REGIME, TIERS = ("hot", "normal", "cold"), ("up", "down", "flat"), ("bull", "bear", "range"), ("elite", "good", "watch")
 CEX = ("binance", "coinbase")
 TX_RE = re.compile(r" tx=\S+")
 # Activity classifier (kind, regex): the first match wins. dashboard.py imports this table from here (importing
@@ -141,6 +145,47 @@ def _sanitize(o):
     if isinstance(o, dict): return {str(k): _sanitize(v) for k, v in o.items()}
     if isinstance(o, (list, tuple)): return [_sanitize(v) for v in o]
     return o
+
+
+def _bounded(o, depth=2, n=16, s=64):
+    """A foreign JSON tree (regime gate, regime table, rotation slice...) with bounded size: at most `n` keys/items per level,
+    strings <= `s`, `depth` levels; deeper containers become a short JSON string. The UI renders these generically."""
+    if isinstance(o, bool) or o is None: return o
+    if isinstance(o, (int, float)): return o if math.isfinite(o) else None
+    if isinstance(o, str): return o[:s]
+    if depth <= 0: return _s(json.dumps(o, default=str, ensure_ascii=False), s)
+    if isinstance(o, dict): return {_s(k, 32): _bounded(v, depth - 1, n, s) for k, v in list(o.items())[:n]}
+    if isinstance(o, (list, tuple)): return [_bounded(v, depth - 1, n, s) for v in list(o)[:n]]
+    return _s(o, s)
+
+
+def _bool(x):
+    """strict JSON bool or None: a string, a number or a missing key is never turned into a pass (fail-closed stays with the reader)"""
+    return x if isinstance(x, bool) else None
+
+
+def _enum(x, allowed):
+    return x if isinstance(x, str) and x in allowed else None
+
+
+def _fold_ret(f):
+    """the out-of-sample return of one brain fold, whichever key brain.py used; None when the fold carries no return"""
+    for k in ("brain_avg_ret_%", "avg_ret_%", "ret_%", "avg_ret", "ret"):
+        v = _f(f.get(k))
+        if v is not None: return v
+    return None
+
+
+def _labels(seq):
+    """model labels of oos.models_hist (strings, or dicts with model_choice/choice/model); None when it is not a list"""
+    if not isinstance(seq, list): return None
+    out = []
+    for x in seq:
+        if isinstance(x, str): out.append(x[:16])
+        elif isinstance(x, dict):
+            lab = next((x[k] for k in ("model_choice", "choice", "model") if isinstance(x.get(k), str)), None)
+            if lab: out.append(lab[:16])
+    return out
 
 
 # ---------------------------------------------------------------- sections
@@ -335,6 +380,22 @@ def _brain(root, now, st, status_fresh):
                          "kelly_pct": _f(d.get("kelly_pct")), "size": _f(d.get("size")), "pass": bool(d.get("pass")), "fail": _s(d.get("fail"), 80), "narr": _s(d.get("narr"), 60)}
                         for d in dec[:8] if isinstance(d, dict)],
              decisions_ts=_f((st or {}).get("ts")) if isinstance(st, dict) else None)
+    # brain v3 fields (all optional: an older brain_state.json simply leaves them null)
+    oos = h["oos"] or {}; fo = m.get("folds"); fl = [f for f in fo if isinstance(f, dict)] if isinstance(fo, list) else []
+    rets = [v for v in (_fold_ret(f) for f in fl) if v is not None]; labs = _labels(oos.get("models_hist"))
+    cal = m.get("calibration") if isinstance(m.get("calibration"), list) else None
+    try: cm = os.path.getmtime(_p(root, "brain.py"))
+    except OSError: cm = None
+    ut = _iso_ts(m.get("updated"))
+    h.update(model_choice=_s(m.get("model_choice"), 16) or None, code_version=_s(m.get("code_version"), 32) or None, archive_n=_i(m.get("archive_n"), None),
+             folds_n=len(fl) if isinstance(fo, list) else (_i(fo, None) if isinstance(fo, (int, float)) and not isinstance(fo, bool) else None),
+             folds_pos=sum(1 for v in rets if v > 0) if rets else None, folds_mean_ret=round(sum(rets) / len(rets), 3) if rets else None,
+             folds=_bounded(fo, 2, 12) if isinstance(fo, (list, dict)) else None,
+             models_hist_n=len(labs) if labs is not None else None, models_hist_flips=sum(1 for i in range(1, len(labs)) if labs[i] != labs[i - 1]) if labs else None,
+             models_hist_last=labs[-1] if labs else None,
+             calibration=[{"bin": _s(b.get("bin"), 12), "n": _i(b.get("n"), None), "p_avg": _f(b.get("p_avg")), "win_rate": _f(b.get("win_rate"))} for b in cal if isinstance(b, dict)][:10] if cal is not None else None,
+             updated_ts=ut, code_mtime=cm, code_newer_s=round(cm - ut, 1) if (cm is not None and ut is not None) else None)
+    h["lambda"] = _f(m.get("lambda"))
     return h
 
 
@@ -448,6 +509,43 @@ def _insider(root, now):
              feed=[{"t": _f(e.get("t")), "kind": _s(e.get("kind"), 24), "w_short": _short(e.get("w")) if e.get("w") else None,
                     "mint_short": _short(e.get("mint")) if e.get("mint") else None, "sol": _f(e.get("sol")), "usd": _f(e.get("usd")), "tier": _s(e.get("tier"), 8) or None}
                    for e in L(st.get("feed"))[-20:][::-1]])
+    # insider v4: status additions (insider.py) + the reliability ranking (insider_rank.py -> insider_rank.json), each None-safe
+    tiers_d = lambda k: {_s(t, 16): _i(v, 0) for t, v in st[k].items()} if isinstance(st.get(k), dict) else {}
+    sbm = st.get("sells_n_by_mint") if isinstance(st.get("sells_n_by_mint"), dict) else None
+    rk = _safe(lambda: _insider_rank(root, now), "insider_rank.json", FRESH["insider_rank"])
+    h.update(rank_t=_f(st.get("rank_t")), rank_tiers=tiers_d("rank_tiers"), tracked_by_tier=tiers_d("tracked_by_tier"),
+             rotation_slice=_bounded(st.get("rotation_slice"), 2, 8), rpc_err_n=_i(st.get("rpc_err_n"), None),
+             sells_n_by_mint=[{"mint_short": _short(m), "n": _i(n, 0)} for m, n in sorted(sbm.items(), key=lambda kv: (-_i(kv[1], 0), str(kv[0])))[:8]] if sbm is not None else None,
+             sells_n_total=sum(_i(n, 0) for n in sbm.values()) if sbm is not None else None,
+             wallets=rk.pop("wallets", []), rank=rk)
+    return h
+
+
+def _insider_rank(root, now):
+    """insider_rank.json (insider_rank.py, cwd of the bot): reliability ranking of the mined wallets. Returns the header plus the
+    top 10 by `rel` (short addresses only) and the tier counts; a missing/corrupt file leaves insider.rank available=False."""
+    src = "insider_rank.json"; r, mt = _load_json(_p(root, src))
+    if not isinstance(r, dict): raise ValueError("insider_rank.json no es un objeto")
+    h = _hdr(src, _f(r.get("t")) or mt, now, FRESH["insider_rank"])
+    W = r.get("wallets") if isinstance(r.get("wallets"), dict) else {}
+    rel = lambda w: _f(w.get("rel")) if _f(w.get("rel")) is not None else -1.0
+    ws = sorted(((a, w) for a, w in W.items() if isinstance(w, dict)), key=lambda kv: (-rel(kv[1]), str(kv[0])))
+    def row(a, w):
+        pnl = w.get("pnl") if isinstance(w.get("pnl"), dict) else {}
+        return {"addr_short": _short(a), "tier": _enum(w.get("tier"), TIERS), "rel": _f(w.get("rel")), "h": _i(w.get("h"), None), "m": _i(w.get("m"), None),
+                "h_eff": _f(w.get("h_eff")), "m_eff": _f(w.get("m_eff")), "hr_post": _f(w.get("hr_post")), "part": _f(w.get("part")), "bot": _bool(w.get("bot")),
+                "bot_why": _s(w.get("bot_why"), 48) or None, "early": _f(w.get("early")), "days": _i(w.get("days"), None), "med_dt": _f(w.get("med_dt")),
+                "med_dslot": _f(w.get("med_dslot")), "avg_sol": _f(w.get("avg_sol")), "last_hit_t": _f(w.get("last_hit_t")), "last_seen_t": _f(w.get("last_seen_t")),
+                "cluster": _s(w.get("cluster"), 24) or None, "live_n": _i(w.get("live_n"), None), "live_hit": _i(w.get("live_hit"), None), "live_mean": _f(w.get("live_mean")),
+                "pnl_win_pct": _f(pnl.get("win_pct")), "pnl_realized": _f(pnl.get("realized")), "pnl_unrealized": _f(pnl.get("unrealized")),
+                "pnl_n_tokens": _i(pnl.get("n_tokens"), None), "why": _s(w.get("why"), 120)}
+    T = r.get("tiers") if isinstance(r.get("tiers"), dict) else None
+    tiers = {k: _i(T.get(k), None) for k in TIERS} if T is not None else {k: sum(1 for _, w in ws if w.get("tier") == k) for k in TIERS}
+    dsc = r.get("discovery") if isinstance(r.get("discovery"), dict) else None
+    h.update(code=_s(r.get("code"), 16), base_rate=_f(r.get("base_rate")), half_life_d=_f(r.get("half_life_d")), n_launches=_i(r.get("n_launches"), None),
+             n_wallets=len(ws), n_bots=sum(1 for _, w in ws if w.get("bot") is True), tiers=tiers,
+             discovery={"t": _f(dsc.get("t")), "n_candidates": _i(dsc.get("n_candidates"), None), "n_added": _i(dsc.get("n_added"), None), "note": _s(dsc.get("note"), 120)} if dsc is not None else None,
+             wallets=[row(a, w) for a, w in ws[:10]])
     return h
 
 
@@ -599,6 +697,12 @@ def _director(root, now):
                                              "paper_n": _i((v.get("paper") or {}).get("n"), None), "paper_pf": _f((v.get("paper") or {}).get("pf_raw")), "paper_exp": _f((v.get("paper") or {}).get("exp_pct_raw"))}
                                  for k, v in plays_ev.items() if isinstance(v, dict)}},
              log=log_tail)
+    # director v2: regime gate (closed values per regime dimension) + the regime evidence table; both passed through bounded
+    rg = st.get("regime_gate") if isinstance(st.get("regime_gate"), dict) else None
+    rt = ev.get("regime") if isinstance(ev.get("regime"), (dict, list)) else None
+    h.update(version=_i(st.get("version"), None), regime_gate=_bounded(rg, 2, 12) if rg is not None else None,
+             regime_gate_n=sum(1 for v in rg.values() if v not in (None, False, [], {}, "")) if rg else 0,
+             regime_table=_bounded(rt, 3, 16) if rt is not None else None)
     return h
 
 
@@ -639,6 +743,45 @@ def _trend(root, now):
     return h
 
 
+def _context(root, now):
+    """data/context_now.json (context.py, hourly: SOL/BTC returns, news, market heat, breadth, HL bias, health, regime) plus the
+    last 24 rows of data/context.jsonl (sparkline of sol.r1h; risk-off count over the 6 most recent hourly rows). Every field is
+    passed through typed and None-safe: unknown stays null, enums outside their domain become null, bools stay strict."""
+    src = "data/context_now.json"; c, mt = _load_json(_p(root, "data", "context_now.json"))
+    if not isinstance(c, dict): raise ValueError("context_now.json no es un objeto")
+    h = _hdr(src, _f(c.get("ts")) or mt, now, FRESH["context"])
+    D = lambda k: c.get(k) if isinstance(c.get(k), dict) else {}
+    sol, btc, nw, mk, br, hl, he, rg = (D(k) for k in ("sol", "btc", "news", "market", "breadth", "hl", "health", "regime"))
+    R = lambda d: {k: _f(d.get(k)) for k in ("usd", "r1h", "r4h", "r24h", "rv24h")}
+    h.update(code=_s(c.get("code"), 16), hour_utc=_i(c.get("hour_utc"), None), dow=_i(c.get("dow"), None), sol=R(sol),
+             btc=dict(R(btc), regime=_enum(btc.get("regime"), BTC_REGIME), regime_age_s=_i(btc.get("regime_age_s"), None)),
+             news={"risk_off": _bool(nw.get("risk_off")), "fng": _i(nw.get("fng"), None), "sentiment": _f(nw.get("sentiment")), "sources_ok": _i(nw.get("sources_ok"), None), "age_s": _i(nw.get("age_s"), None)},
+             market={"new_pools_1h": _i(mk.get("new_pools_1h"), None), "graduations_1h": _i(mk.get("graduations_1h"), None), "agg_vol_h1_usd": _f(mk.get("agg_vol_h1_usd")),
+                     "n_cands_1h": _i(mk.get("n_cands_1h"), None), "heat": _enum(mk.get("heat"), HEAT), "heat_ratio": _f(mk.get("heat_ratio"))},
+             breadth={"n_entry": _i(br.get("n_entry"), None), "n_universe": _i(br.get("n_universe"), None), "share": _f(br.get("share")), "med_atr_ratio": _f(br.get("med_atr_ratio"))},
+             hl={"sol_bias": _f(hl.get("sol_bias")), "btc_bias": _f(hl.get("btc_bias")), "stress": _s(hl.get("stress"), 24) or None},
+             health={"insider_age_s": _i(he.get("insider_age_s"), None), "st_budget_used": _i(he.get("st_budget_used"), None), "st_budget_cap": _i(he.get("st_budget_cap"), None),
+                     "x_buzz_age_s": _i(he.get("x_buzz_age_s"), None), "brain_active": _bool(he.get("brain_active")), "director_shadow": _bool(he.get("director_shadow"))},
+             regime={"sol_trend": _enum(rg.get("sol_trend"), TREND), "btc_on": _bool(rg.get("btc_on")), "risk_off": _bool(rg.get("risk_off")), "heat": _enum(rg.get("heat"), HEAT)},
+             stale=[_s(x, 32) for x in c["stale"] if isinstance(x, str)][:32] if isinstance(c.get("stale"), list) else [])
+    hist, herr = [], None
+    try:
+        lines, _ = _tail_lines(_p(root, "data", "context.jsonl"), 128_000)
+        for l in lines[-48:]:
+            try: r = json.loads(l)
+            except Exception: continue
+            t = _f(r.get("ts")) if isinstance(r, dict) else None
+            if t is None: continue
+            rs, rn, rm = ((r.get(k) if isinstance(r.get(k), dict) else {}) for k in ("sol", "news", "market"))
+            hist.append({"ts": t, "r1h": _f(rs.get("r1h")), "risk_off": _bool(rn.get("risk_off")), "heat": _enum(rm.get("heat"), HEAT), "new_pools_1h": _i(rm.get("new_pools_1h"), None)})
+        hist.sort(key=lambda x: x["ts"]); hist = hist[-24:]
+    except FileNotFoundError: herr = "data/context.jsonl ausente"
+    except Exception as e: herr = _err(e)
+    last6 = [x for x in hist[-6:] if now - x["ts"] <= 7 * 3600]   # the 6 most recent hourly rows, none older than 7 h (gaps are not bridged)
+    h.update(history=hist, history_error=herr, riskoff_6h=sum(1 for x in last6 if x["risk_off"] is True) if last6 else None, riskoff_6h_n=len(last6))
+    return h
+
+
 # ---------------------------------------------------------------- entry point
 def build_overview(root, now=None):
     """Everything the v2 panel shows, from files under `root` only. Never raises; see the module docstring."""
@@ -656,7 +799,8 @@ def build_overview(root, now=None):
            "activity": _safe(lambda: _activity(root, now, ex_cfg), "bot_<ex>.log", FRESH["log"]),
            "director": _safe(lambda: _director(root, now), "director_state.json", FRESH["director"]),
            "operator": _safe(lambda: _operator(root, now), "operator_state.json", FRESH["operator"]),
-           "trend": _safe(lambda: _trend(root, now), "state/trend_status.json", FRESH["trend"])}
+           "trend": _safe(lambda: _trend(root, now), "state/trend_status.json", FRESH["trend"]),
+           "context": _safe(lambda: _context(root, now), "data/context_now.json", FRESH["context"])}
     out["meta"].setdefault("now", now)
     return _sanitize(out)
 

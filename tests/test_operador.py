@@ -97,3 +97,68 @@ def test_review_with_brain_file_but_no_status_does_not_crash(tmp_path):
     assert ov["solana"]["brain"]["available"] and not ov["solana"]["available"]
     F, S = op.review(ov, json.load(open(tmp_path / "config.json")), now)
     assert "sombra" in S["brain"] and any(f["code"] == "solana_down" or f["code"] == "director_missing" for f in F)
+
+
+# ---------------------------------------------------------------- v3: market context, insider rank and brain/code findings
+from tests.test_dash_data import write_context, write_rank, brain_v3
+
+
+def test_review_context_findings_and_market_summary(tmp_path):
+    d = str(tmp_path); now = time.time(); make_empty(d); cfg = json.load(open(tmp_path / "config.json")); codes = lambda F: {f["code"]: f["level"] for f in F}
+    F, S = op.review(dash_data.build_overview(d, now), cfg, now); c = codes(F)
+    assert c.get("context_stale") == "warn" and S["market"].startswith("sin contexto") and "news_riskoff_6h" not in c and "market_dead" not in c
+    write_context(d, now); F, S = op.review(dash_data.build_overview(d, now), cfg, now); c = codes(F)
+    assert "context_stale" not in c and "news_riskoff_6h" not in c and "market_dead" not in c
+    assert S["market"] == "SOL 24 h +3.2 % (up) · BTC 24 h -1.0 % (on, range) · F&G 42 · riesgo-off no · calor normal (×1.10) · lanzamientos/h 35, graduaciones 4 · amplitud 12/80 (15 %)"
+    write_context(d, now, riskoff_last=6, market={"new_pools_1h": 0, "heat": "cold"}); F, S = op.review(dash_data.build_overview(d, now), cfg, now); c = codes(F)
+    assert c.get("news_riskoff_6h") == "info" and c.get("market_dead") == "info" and "calor cold" in S["market"] and "lanzamientos/h 0" in S["market"]
+    write_context(d, now, riskoff_last=5, market={"new_pools_1h": 0, "heat": "normal"}); c = codes(op.review(dash_data.build_overview(d, now), cfg, now)[0])
+    assert "news_riskoff_6h" not in c and "market_dead" not in c                  # 5 of 6 is not sustained; 'cold' is required for a dead market
+    write_context(d, now, riskoff_last=6, rows=3); c = codes(op.review(dash_data.build_overview(d, now), cfg, now)[0]); assert "news_riskoff_6h" not in c   # < 6 rows: unknown, no finding
+    write_context(d, now, riskoff_last=6, market={"new_pools_1h": 0, "heat": "cold"})
+    F, S = op.review(dash_data.build_overview(d, now + 3 * 3600), cfg, now + 3 * 3600); c = codes(F)     # stale: warn, and no notes from old data
+    assert c.get("context_stale") == "warn" and "news_riskoff_6h" not in c and "market_dead" not in c and S["market"].startswith("obsoleto (3.")
+
+
+def test_review_insider_rank_and_brain_code_findings(root):
+    d, now = root; cfg = json.load(open(os.path.join(d, "config.json"))); codes = lambda F: {f["code"]: (f["level"], f["msg"]) for f in F}
+    c = codes(op.review(dash_data.build_overview(d, now), cfg, now)[0])
+    assert c["insider_rank_stale"][0] == "info" and "sin insider_rank.json" in c["insider_rank_stale"][1]
+    assert c["brain_state_older_than_code"][0] == "info" and "sin code_version" in c["brain_state_older_than_code"][1]     # the fixture brain is v2
+    write_rank(d, now); c = codes(op.review(dash_data.build_overview(d, now), cfg, now)[0]); assert "insider_rank_stale" not in c
+    c = codes(op.review(dash_data.build_overview(d, now + 3 * 3600), cfg, now + 3 * 3600)[0]); assert "obsoleto" in c["insider_rank_stale"][1]
+    st = json.load(open(os.path.join(d, "status_solana.json"))); st["brain"]["model"] = brain_v3(now); json.dump(st, open(os.path.join(d, "status_solana.json"), "w"))
+    c = codes(op.review(dash_data.build_overview(d, now), cfg, now)[0]); assert "brain_state_older_than_code" not in c      # v3 state, no brain.py in the root
+    open(os.path.join(d, "brain.py"), "w").write("# fixture\n"); t_code = dash_data._iso_ts("2026-11-02T10:00:00") + 2 * 86400; os.utime(os.path.join(d, "brain.py"), (t_code, t_code))
+    F, S = op.review(dash_data.build_overview(d, now), cfg, now); c = codes(F)
+    assert c["brain_state_older_than_code"][0] == "info" and "2.0 d más nuevo" in c["brain_state_older_than_code"][1] and "modelo logit (brain/3)" in S["brain"]
+    os.utime(os.path.join(d, "brain.py"), (t_code - 1.5 * 86400, t_code - 1.5 * 86400))                                      # 12 h newer: within a day, no finding
+    assert "brain_state_older_than_code" not in codes(op.review(dash_data.build_overview(d, now), cfg, now)[0])
+
+
+def test_entry_text_market_line_and_daily_market_paragraph(root):
+    d, now = root; write_context(d, now, riskoff_last=2)
+    ov = dash_data.build_overview(d, now); cfg = json.load(open(os.path.join(d, "config.json"))); F, S = op.review(ov, cfg, now)
+    txt = op.entry_text(F, S, [], now)
+    assert "- Mercado: SOL 24 h +3.2 % (up) · BTC 24 h -1.0 % (on, range) · F&G 42 · riesgo-off no · calor normal (×1.10) · lanzamientos/h 35, graduaciones 4 · amplitud 12/80 (15 %)." in txt
+    assert txt.index("- Escaneo:") < txt.index("- Mercado:") < txt.index("- Director:")
+    L = op.daily_lines(d, ov, now); m = [l for l in L if l.startswith("- Mercado (contexto")]
+    assert len(m) == 1 and "riesgo-off en 2 de las últimas 6 filas horarias" in m[0] and "24 filas en el histórico" in m[0]
+    assert "- Mercado:" not in op.entry_text(F, {k: v for k, v in S.items() if k != "market"}, [], now)     # a summary without the key still renders
+    assert op.market_line({"available": False, "error": "fichero ausente"}) == "sin contexto (fichero ausente)"
+    ln = op.market_line({"available": True, "fresh": True, "sol": {}, "btc": {}, "news": {"fng": "x"}, "market": {}, "breadth": {"n_entry": 3}, "regime": {}, "stale": ["sol.r24h", "btc"]})
+    assert ln == "SOL 24 h ? (?) · BTC 24 h ? (?) · F&G ? · riesgo-off ? · calor ? · lanzamientos/h ? · amplitud 3/? · sin calcular: sol.r24h, btc"
+    assert op.market_line({"available": True, "fresh": False, "age_s": 9000}).startswith("obsoleto (2.5 h): SOL 24 h ?")
+
+
+def test_new_findings_never_alert_and_context_stale_once_per_6h(root):
+    d, now = root        # the fixture ships no context files: context_stale (warn) + info findings every hour
+    r = op.run_once(d, now=now); assert "context_stale" in r["alerted"]
+    F = {f["code"]: f["level"] for f in r["findings"]}; assert F["insider_rank_stale"] == "info" and F["brain_state_older_than_code"] == "info" and F["context_stale"] == "warn"
+    assert "context_stale" not in op.run_once(d, now=now + 3600)["alerted"]                    # deduped
+    assert "context_stale" in op.run_once(d, now=now + 6 * 3600 + 1)["alerted"]                # once per 6 h
+    al = [json.loads(l)["code"] for l in open(os.path.join(d, op.ALERTS))]
+    assert al.count("context_stale") == 2 and not {"insider_rank_stale", "brain_state_older_than_code", "news_riskoff_6h", "market_dead"} & set(al)
+    st = json.load(open(os.path.join(d, op.STATE))); assert st["summary"]["market"].startswith("sin contexto")
+    assert "- Mercado: sin contexto" in open(os.path.join(d, op.DIARY), encoding="utf-8").read()
+    assert dash_data.build_overview(d, now)["operator"]["summary"]["market"].startswith("sin contexto")      # the panel shows the same line
