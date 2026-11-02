@@ -99,7 +99,7 @@ def test_st_subset_maps_the_real_solanatracker_feature_keys():
 def test_accepts_checks_keyword_or_var_kwargs():
     assert memebot._accepts(lambda a, ctx=None: 0, "ctx") and memebot._accepts(lambda a, **kw: 0, "ctx")
     assert not memebot._accepts(lambda a: 0, "ctx") and not memebot._accepts(object(), "ctx") and not memebot._accepts(len, "ctx")
-    assert memebot._accepts(director.compute, "paths") and not memebot._accepts(director.compute, "ctx")   # today's director: paths/sim yes, ctx not yet
+    assert memebot._accepts(director.compute, "paths") and memebot._accepts(director.compute, "ctx")       # director v2 accepts paths/sim and ctx (merged 02-nov)
 
 
 def test_hour_utc_is_utc():
@@ -210,8 +210,9 @@ def test_director_gate_uses_utc_hour_and_passes_ctx_only_when_accepted(monkeypat
 def test_seed_brain_context_uses_a_hook_only_when_present(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path); os.makedirs("data")
     open("data/context.jsonl", "w").write(json.dumps({"ts": 1, "market": {"agg_vol_h1_usd": 5}}) + "\n{bad json\n" + json.dumps({"ts": 2}) + "\n")
-    s = NS(brain=brain.Brain(str(tmp_path / "bs.json")))                                    # brain v2: no hook -> nothing happens
-    assert memebot.Meme.seed_brain_context(s) is False
+    assert memebot.Meme.seed_brain_context(NS(brain=NS())) is False                          # a brain without the hook: nothing happens
+    s = NS(brain=brain.Brain(str(tmp_path / "bs.json")))                                    # brain v3 exposes seed_heat -> seeded (bad rows skipped)
+    assert memebot.Meme.seed_brain_context(s) is True
     got = []; s.brain.seed_heat = lambda rows: got.append(rows)
     assert memebot.Meme.seed_brain_context(s) is True and [r["ts"] for r in got[0]] == [1, 2]
     s.brain.seed_heat = lambda rows: 1 / 0                                                  # a broken hook never breaks startup

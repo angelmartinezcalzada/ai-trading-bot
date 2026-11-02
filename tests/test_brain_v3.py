@@ -6,6 +6,11 @@ import json, os, sys, time, types, random, shutil
 import pytest
 import brain, eval_solana, director
 
+
+def _ctx_available():
+    try: import context; return True
+    except ImportError: return False
+
 C = {"min_liquidity_usd": 50000, "min_score": 45, "brain_min_score": 45, "position_pct": 0.05, "max_hold_hours": 3, "exit_mode": "trail", "hard_stop_pct": 6, "trail_pct_tt": 12}
 iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(t))
 
@@ -171,10 +176,11 @@ def test_feature_block_shapes_with_missing_fields(monkeypatch):
            "parts": {"parts": {"buy_press": 6}, "age_h": 5, "vol_liq": 2.1, "h1": 250, "m5": -90, "b_s": "120/80"}, "rug": {"top10": 12.5, "holders": 8000},
            "insider": {"tok": 4, "w": 0.5}, "st_f": {"snipers_pct": 2.0, "bundlers_pct": None, "holders": 8000, "migrated": True}, "ctx": {"hour_utc": 3}}
     x = brain.xraw(rec); v = dict(zip(brain.XC, brain.xvec(x, ["gecko_trending", "dex_boosts"])))
-    assert x["ins"] == 2.0 and x["buys"] == 0.6 and x["hour"] == 3 and x["score"] == 55 and x["st"]["bundlers_pct"] is None and x["cx"] is None
+    assert x["ins"] == 2.0 and x["buys"] == 0.6 and x["hour"] == 3 and x["score"] == 55 and x["st"]["bundlers_pct"] is None
+    assert x["cx"] is None or {k for k, v in x["cx"].items() if v} <= {"night_utc"}   # context.py present (merged): no regime data -> only night_utc (hour 3) can be True; absent -> None
     assert v["h1"] == 100.0 and v["m5"] == -30.0 and v["rt"] == 1.2 and v["rt_missing"] == 0.0 and v["src_1"] == 1.0 and v["src_0"] == 0.0
     assert v["st_snipers_pct"] == 2.0 and v["st_bundlers_pct_missing"] == 1.0 and v["st_migrated"] == 1.0 and v["st_holders"] == pytest.approx(8.987, abs=0.01)
-    assert v["liq_log"] == pytest.approx(11.695, abs=0.01) and v["hour_sin"] == pytest.approx(0.7071, abs=1e-3) and v["score"] == 0.55 and v["ctx_missing"] == 1.0
+    assert v["liq_log"] == pytest.approx(11.695, abs=0.01) and v["hour_sin"] == pytest.approx(0.7071, abs=1e-3) and v["score"] == 0.55 and v["ctx_missing"] == (0.0 if _ctx_available() else 1.0)   # ctx present + context.py importable -> not missing
     assert brain.xraw({**rec, "insider": {"tok": 4, "w": 0.5, "stale": True}})["ins"] is None                      # stale insider -> 0 (after xvec)
     assert brain.xraw({"ts": "2026-11-02T10:00:00"})["hour"] is not None and brain.xraw({})["hour"] is None             # hour from ts when ctx has none
     # the context helper: present -> booleans; broken -> treated as missing
@@ -309,3 +315,12 @@ def test_migration_of_a_v2_state_and_backward_compatible_decide(tmp_path, monkey
     for k in ("active", "updated", "n_labelled", "base", "avg_win", "avg_loss", "oos", "weights"): assert k in st                 # dash_data / memebot status keys
     assert brain._migrate("garbage")["active"] is False and brain._migrate({"model_choice": "logit", "logit": {"w": []}})["model_choice"] == "beta"
     assert brain.Brain.__new__(brain.Brain).__class__.signals is brain.signals and brain.Brain(str(tmp_path / "none.json")).playbook["size_mult"] == 1.0
+
+
+def test_seed_heat_from_context_rows():
+    b = brain.Brain(); now = 1_800_000_000.0
+    rows = [{"ts": now-7*3600, "market": {"new_pools_vol_h1_usd": 999}},          # too old: ignored
+            {"ts": now-3*3600, "market": {"new_pools_vol_h1_usd": 1200.5}}, {"ts": now-3600, "market": {"new_pools_vol_h1_usd": None}},
+            {"ts": now-1800, "market": {"new_pools_vol_h1_usd": 800}}, {"ts": "bad"}, None]
+    assert b.seed_heat(rows, now=now) == 2 and [v for _, v in b.ctx["heat_hist"]] == [1200.5, 800.0]
+    assert b.seed_heat(rows, now=now) == 0                                          # idempotent

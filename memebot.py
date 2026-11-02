@@ -1120,7 +1120,7 @@ class Meme:
             s.inline_manage()                            # keep managing open positions while scanning
             liq = (p.get("liquidity") or {}).get("usd") or 0
             ts_ = dt.datetime.now().isoformat(timespec="seconds")   # rid = mint:ts (row id for joins; its presence marks a FULL row: logc -> row_enrich)
-            rec = {"ts": ts_, "rid": f"{m}:{ts_}", "mint": m, "sym": p["baseToken"]["symbol"], "src": mints[m], "dex": p.get("dexId"),
+            rec = {"ts": ts_, "rid": f"{m}:{ts_}", "mint": m, "sym": p["baseToken"]["symbol"], "src": mints[m], "dex": p.get("dexId"), "vol_h1": float((p.get("volume") or {}).get("h1") or 0),   # vol_h1: context.py agg_vol_h1_usd
                    "price": p.get("priceUsd"), "pair": p.get("pairAddress"), "liq": round(liq), "mcap": p.get("marketCap") or p.get("fdv"), "pass": False, "fail": []}
             if liq < c["min_liquidity_usd"]: rec["fail"].append("liq"); s.logc(rec); continue
             if stable_fake(rec["sym"], p.get("priceUsd")): rec["fail"].append("stable_impersonator"); s.logc(rec); continue

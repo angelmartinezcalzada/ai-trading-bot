@@ -308,6 +308,18 @@ class Brain:
         mult = pb[1]*(0.6 if ctx["sol_trend"] == "down" else 1.0)*(0.8 if btc_on is False else 1.0)
         ctx["playbook"] = {"score_adj": pb[0], "size_mult": round(mult, 2), "name": f"{ctx['heat']}/SOL-{ctx['sol_trend']}"}
         return ctx
+    def seed_heat(s, rows, now=None):
+        """startup seed of the heat baseline from data/context.jsonl rows (dicts, oldest first; memebot.seed_brain_context): the last 6 h of
+        market.new_pools_vol_h1_usd samples enter heat_hist so 'hot/cold' does not read 'normal' for 7 min after every restart. Returns the
+        number of samples seeded. Pure bookkeeping: never raises, never touches thresholds."""
+        now = now or time.time(); hist = s.ctx.setdefault("heat_hist", []); seen = {round(h[0]) for h in hist}; n = 0
+        for r in rows or []:
+            try:
+                t = float(r.get("ts")); v = (r.get("market") or {}).get("new_pools_vol_h1_usd")
+                if v is None or not (now-6*3600 <= t <= now) or round(t) in seen: continue
+                hist.append((t, float(v))); seen.add(round(t)); n += 1
+            except Exception: continue
+        hist.sort(key=lambda h: h[0]); s.ctx["heat_hist"] = [h for h in hist if now-h[0] < 6*3600]; return n
     def narrative(s, name, sym):
         ws = set(re.findall(r"[a-z]{3,}", (name + " " + sym).lower())); return sorted(ws & set(s.ctx.get("narratives", [])))
     # ---------------- microstructure ----------------
