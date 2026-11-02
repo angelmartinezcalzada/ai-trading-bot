@@ -240,6 +240,9 @@ def rank(wallets_json, mined_rows, live_json, now, prev=None, st_pnl=None, p=Non
     WL = live_json if isinstance(live_json, dict) else {}; st_pnl = st_pnl if isinstance(st_pnl, dict) else {}
     A, SE, nL, wins, devs = _agg(mined_rows or [], now)
     base_rate = wins/nL if nL else 0.5; a0 = max(1.0, PRIOR_N*base_rate); b0 = max(1.0, PRIOR_N*(1-base_rate)); nLd = max(1, nL)
+    # relative to the mined base rate (maintainer 02-nov): elite must be demonstrably ABOVE the average early buyer (lower bound >= base + 2 pp),
+    # good within 5 pp of it; with a 0.6 base rate two lucky hits (rel ~0.55) are 'watch', not 'good'. Only ever stricter than the fixed floors.
+    pr = dict(pr); pr["rel_elite"] = max(pr["rel_elite"], round(base_rate + 0.02, 4)); pr["rel_good"] = max(pr["rel_good"], round(base_rate - 0.05, 4))
     PT, M, known = _prev_state(prev)
     disc = _prune_discovery(discovery if discovery is not None else (prev or {}).get("discovery") if isinstance(prev, dict) else None, now)
     keep = {a for a, x in A.items() if x["n"] >= MIN_N} | {a for a in W if isinstance(a, str)} | {a for a in WL if isinstance(a, str)} | \

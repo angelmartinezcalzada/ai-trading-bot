@@ -7,7 +7,7 @@ import solanatracker as st
 
 NOW = 1_800_000_000.0; D = 86400.0
 A1, A2, A3 = "A"*32, "B"*32, "C"*32                                    # base58-looking addresses for the ST wrappers
-W6L = [(0, 7, 15), (10, 7, 15), (1, 7, 15), (2, 7, 15), (3, 7, 15), (4, 7, 15), (69, 8, 15)]   # 6 wins on 5 distinct days + 1 miss (9.5 d old)
+W6L = [(0, 7, 15), (10, 7, 15), (1, 7, 15), (2, 7, 15), (3, 7, 15), (4, 7, 15), (5, 7, 15), (6, 7, 15), (69, 8, 15)]   # 8 wins on 8 distinct days + 1 miss (9.5 d old): elite must sit above the 0.6 base rate (rel >= 0.62)
 
 
 def launch(i, win, age_d, buyers, sells=(), creator=None):
@@ -44,13 +44,13 @@ def test_params_only_tighten():
     p = ir.params({"rel_elite": 0.7, "bot_part": 0.05, "hit_days": 7}); assert p["rel_elite"] == 0.7 and p["bot_part"] == 0.05 and p["hit_days"] == 7
 
 
-def test_two_hits_not_elite_six_hits_recent_elite_and_participation_bot():
+def test_two_hits_not_elite_eight_hits_recent_elite_and_participation_bot():
     rows = rows_for({"W2": [(0, 5, 12), (1, 5, 12)], "W6": W6L, "BOT": [(i, 0, 0) for i in range(100) if i % 20 < 7]})
     d = ir.rank({}, rows, {}, NOW)
     assert d["code"] == "insider_rank/1" and d["half_life_d"] == 7 and d["n_launches"] == 100 and abs(d["base_rate"]-0.6) < 1e-9
     w2, w6, bot = d["wallets"]["W2"], d["wallets"]["W6"], d["wallets"]["BOT"]
-    assert w2["h"] == 2 and w2["m"] == 0 and w2["tier"] != "elite" and w2["rel"] < 0.6 and 1.7 < w2["h_eff"] < 2
-    assert w6["tier"] == "elite" and w6["h"] == 6 and w6["m"] == 1 and w6["days"] == 6 and w6["rel"] >= 0.6 and w6["h_eff"] >= 2.5 and not w6["bot"] and w6["why"] == "elite"
+    assert w2["h"] == 2 and w2["m"] == 0 and w2["tier"] == "watch" and w2["rel"] < 0.6 and 1.7 < w2["h_eff"] < 2                 # two lucky hits: watch, not good (rel < base - 0.05)
+    assert w6["tier"] == "elite" and w6["h"] == 8 and w6["m"] == 1 and w6["days"] == 8 and w6["rel"] >= 0.62 and w6["h_eff"] >= 2.5 and not w6["bot"] and w6["why"] == "elite"
     assert abs(w6["m_eff"]-0.5**(9.5/7)) < 1e-3 and w6["last_hit_t"] == NOW-0.5*D and w6["med_dslot"] == 15 and w6["med_dt"] == 14 and w6["avg_sol"] == 0.5
     assert bot["bot"] and bot["tier"] is None and bot["why"] == "bot" and bot["bot_why"].startswith("part") and abs(bot["part"]-0.35) < 1e-9 and 0 < bot["rel"] < 1
     assert d["top"][0] == "W6" and "BOT" not in d["top"] and d["tiers"]["elite"] == 1 and d["prev_tiers"]["W6"] == "elite"
