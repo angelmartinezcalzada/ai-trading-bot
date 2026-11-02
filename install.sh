@@ -23,7 +23,7 @@ if [ ! -f solana_wallet.json ]; then echo "== AVISO: sin solana_wallet.json -> S
 echo "== tests"; if python3 -m pytest -q tests/ 2>&1 | tail -3; then rm -f tests_failed.txt; else date -Is > tests_failed.txt; echo "== AVISO: hay tests que fallan (ver tests_failed.txt); la instalación sigue, el operador lo avisará"; fi
 echo "== modo actual por exchange:"; python3 -c "import json; c=json.load(open('config.json'))['exchanges']; print({k: v.get('mode','paper') for k, v in c.items()})"
 echo
-echo "Listo. Arranque 24/7:   nohup setsid ./run_forever.sh >/dev/null 2>&1 &"
-echo "Estado:                 ./status.sh      Panel: http://127.0.0.1:8787/   (contraseña en dashboard_password.txt)"
+echo "Instalado. Arranque 24/7 en Windows: tools/autostart.sh on (el instalador wsl_bootstrap.sh ya lo hace); en Linux: nohup setsid ./run_forever.sh &"
+echo "Diagnóstico:            python3 tools/diagnostico.py      Panel: http://127.0.0.1:8787/   (contraseña en dashboard_password.txt)"
 echo "Parar todo:             ./stop.sh        Operador manual: python3 operador.py --once --dry-run"
-echo "Modo real de Solana:    config.json exchanges.solana.mode = \"live\" + solana_wallet.json (decisión del dueño, nunca automática)"
+echo "Modo real de Solana:    automático en cuanto solana_wallet.json tiene >= 0,05 SOL, aunque config diga paper; para impedirlo: touch KILL_solana"

@@ -46,3 +46,5 @@ insider_ws_status.json
 insider_ws_queue.jsonl
 data/st_cache.json
 .autostart
+.supervisor.lock
+.run_forever.lock

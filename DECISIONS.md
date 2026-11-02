@@ -1003,3 +1003,10 @@ Backups: memebot.py / copytrade_paper.py / config.json / DECISIONS.md .bak_rugpu
 - Contexto: si Binance no responde desde la máquina (SOL '?' en su PC), el precio de SOL sale de Jupiter, la misma fuente del memebot.
 - Expectativa sin cambios: aun encendido 24/7 y con la clave, compras reales pocas por semana o ninguna; la evidencia medida no permite prometer ganancias.
 - Tests: 279.
+
+## 2026-11-02 16:55 (Madrid) — El arranque automático falló en el PC de Àngel: causa encontrada y corregida (Claude)
+- Salida de Àngel: clave de Solana Tracker guardada; "el .vbs no arrancó el bot"; el instalador cayó a nohup (el bot moriría al cerrar la ventana).
+- Fallo mío encontrado y probado: el candado de instancia única (flock en el descriptor 9, añadido el 1-nov) lo heredaban todos los hijos del supervisor, incluidos los `sleep 3600` de sus bucles. Al matar el supervisor (stop.sh / instalador), esos sleep huérfanos retenían el candado hasta una hora y el supervisor nuevo salía con "ya hay un run_forever.sh en marcha". Prueba en la sesión: sin la corrección el segundo arranque dice LOCKED; con ella arranca. Corrección: cada bucle se lanza con `9>&-` (solo el proceso principal retiene el candado) y el candado pasa a `.supervisor.lock`, para que los huérfanos del candado viejo no bloqueen la transición.
+- `tools/autostart.sh` v2: el arranque en Inicio es un acceso directo creado con PowerShell (no depende de VBScript, que Windows está retirando; .vbs solo como respaldo), se lanza a través del explorador de Windows (proceso independiente de la ventana de Ubuntu), luego PowerShell y luego wscript, cada intento verificado; si nada funciona, imprime el error y las últimas líneas de supervisor.log.
+- install.sh decía "Modo real de Solana: … nunca automática", lo cual era falso (go_live pasa a real con ≥ 0,05 SOL en el wallet); corregido.
+- Tests: 279.

@@ -37,7 +37,7 @@ if ! grep -q '^SOLANATRACKER_API_KEY=.' keys.env 2>/dev/null && [ -r /dev/tty ];
 fi
 rm -f STOP
 if ./tools/autostart.sh on; then echo "== el bot corre en segundo plano y arrancará solo al iniciar sesión en Windows"
-else nohup setsid ./run_forever.sh >/dev/null 2>&1 & echo "== AVISO: sin arranque automático; el bot se parará si cierras esta ventana de Ubuntu"; fi
+else nohup setsid ./run_forever.sh >/dev/null 2>&1 & echo "== AVISO: sin arranque automático; el bot se parará si cierras esta ventana de Ubuntu (pega estas líneas a Claude)"; fi
 echo "== arrancado; esperando 40 s para el diagnóstico"; sleep 40
 python3 tools/diagnostico.py 2>/dev/null || ./status.sh 2>/dev/null | head -8 || true
 echo; echo "== listo. Panel desde Windows: http://localhost:8787/   (contraseña: cat ~/ai-trading-bot/dashboard_password.txt; no la pegues en chats)"
