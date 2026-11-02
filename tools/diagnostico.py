@@ -11,9 +11,10 @@ GAP_S = 20 * 60                                         # a silence longer than 
 B58 = re.compile(r"\b[1-9A-HJ-NP-Za-km-z]{32,90}\b")
 SECRET = re.compile(r"(?i)\b(api[-_]?key|apikey|token|secret|password|passwd|auth)=([^&\s'\",)]+)")
 URL = re.compile(r"((?:https?|wss?)://[^/\s'\"?]+)[^\s'\"]*")
-PROCS = [("solana", r"bot\.py --exchange solana( |$)"), ("binance", r"bot\.py --exchange binance( |$)"), ("coinbase", r"bot\.py --exchange coinbase( |$)"),
-         ("panel", r"dashboard\.py"), ("insiders", r"insider\.py daemon"), ("WS insiders", r"insider_ws\.py"), ("tendencia", r"trend_spot\.py"),
-         ("supervisor", r"run_forever\.sh")]
+PY = r"^\d+ \S*python3?(\.\d+)? "                         # 'PID python3 …' / 'PID /usr/bin/python3.12 …': the process itself, never a wrapper shell
+PROCS = [("solana", PY + r"bot\.py --exchange solana( |$)"), ("binance", PY + r"bot\.py --exchange binance( |$)"), ("coinbase", PY + r"bot\.py --exchange coinbase( |$)"),
+         ("panel", PY + r"dashboard\.py"), ("insiders", PY + r"insider\.py daemon"), ("WS insiders", PY + r"insider_ws\.py"), ("tendencia", PY + r"trend_spot\.py"),
+         ("supervisor", r"^\d+ \S*(bash|sh) \S*run_forever\.sh( |$)")]
 BLOCK = [("slippage", "deslizamiento"), ("not sellable", "no vendible"), ("impact", "impacto de precio"), ("real round-trip", "coste ida y vuelta"), ("EV ", "EV < 3× coste")]
 
 
@@ -121,6 +122,38 @@ def parse_trades(path, since):
     return out
 
 
+def parse_supervisor(lines, since, ex="solana"):
+    """supervisor.log ('<date -Is> [solana] start mode=…' / '… exited code N' / '[supervisor] ya hay …') -> restarts in the window"""
+    import datetime as _dt
+    d = dict(starts=0, exits=0, bad_exits=0, last_code=None, lock_refused=0)
+    for l in lines:
+        try: t = _dt.datetime.fromisoformat(l.split(" ", 1)[0]).timestamp()
+        except Exception: continue
+        if t < since: continue
+        if f"[{ex}] start" in l: d["starts"] += 1
+        elif f"[{ex}] exited code" in l:
+            m = re.search(r"exited code (-?\d+)", l); c = int(m.group(1)) if m else None
+            d["exits"] += 1; d["last_code"] = c; d["bad_exits"] += 1 if c not in (0, None) else 0
+        elif "[supervisor] ya hay" in l: d["lock_refused"] += 1
+    return d
+
+
+def last_crash(lines):
+    """last error line of stdout_<ex>.log that is NOT a normal timestamped log line (traceback tail, 'Live refused', singleton exit)"""
+    for l in reversed(lines):
+        s = l.strip()
+        if not s or re.match(r"^\d{4}-\d\d-\d\d[ T]\d\d:", s): continue
+        if re.search(r"(Error|Exception|refused|ya corre|No module named|Killed)", s): return clean(s, 160)
+    return None
+
+
+def autostart(root):
+    """Windows autostart (tools/autostart.sh writes the .vbs path into .autostart): True / False / None (not WSL)"""
+    try: v = open(os.path.join(root, ".autostart"), encoding="utf-8").read().strip()
+    except Exception: return False if os.environ.get("WSL_DISTRO_NAME") else None
+    return bool(v) and os.path.exists(v)
+
+
 def count_procs(lines):
     if lines is None: return {k: None for k, _ in PROCS}
     return {k: sum(1 for l in lines if re.search(p, l)) for k, p in PROCS}
@@ -140,7 +173,9 @@ def gather(root=ROOT, hours=24, now=None, procs=None):
              status_age=(now - st["ts"]) if isinstance(st.get("ts"), (int, float)) else None, state=stl,
              wallet_file=os.path.exists(P("solana_wallet.json")), kill_file=os.path.exists(P("KILL_solana")),
              stop_file=os.path.exists(P("STOP")) or os.path.exists(P("STOP_solana")), st_key=key_set(root, "SOLANATRACKER_API_KEY"),
-             log=parse_log(tail_lines(P("bot_solana.log")), since, now), trades=parse_trades(P("trades_solana_live.csv"), since))
+             log=parse_log(tail_lines(P("bot_solana.log")), since, now), trades=parse_trades(P("trades_solana_live.csv"), since),
+             sup=parse_supervisor(tail_lines(P("supervisor.log"), 2 * 1024 * 1024), since), crash=last_crash(tail_lines(P("stdout_solana.log"), 256 * 1024)),
+             autostart=autostart(root))
     try:
         sys.path.insert(0, root); import solanatracker as _st; cap, res = _st.DAILY_CAP, _st.BOT_RESERVE
     except Exception: cap, res = 300, 200
@@ -173,7 +208,13 @@ def main_reason(D):
 
 def verdict(D):
     v = []; pr = D["procs"]; sol = pr.get("solana"); st = D["status"]; H = D["hours"]
-    if sol == 0: v.append("✖ El bot de Solana NO está corriendo: relánzalo con el comando de instalación (wsl_bootstrap.sh).")
+    sup = D.get("sup") or {}
+    if sol == 0 and sup.get("bad_exits"):
+        v.append(f"✖ El bot de Solana se cae al arrancar: el supervisor lo relanzó {sup['bad_exits']} veces (último código {sup.get('last_code')})"
+                 + (f"; último error: {D['crash']}" if D.get("crash") else "") + ".")
+    elif sol == 0: v.append("✖ El bot de Solana NO está corriendo: relánzalo con el comando de instalación (wsl_bootstrap.sh).")
+    if D.get("autostart") is False and not pr.get("supervisor"):
+        v.append("⚠ Sin arranque automático: en Windows el bot muere al cerrar la ventana de Ubuntu. El comando de instalación lo instala (tools/autostart.sh).")
     elif sol and sol > 1: v.append(f"⚠ Hay {sol} copias del bot de Solana (debería haber 1): relanza con el comando de instalación.")
     if sol and D["status_age"] is not None and D["status_age"] > 300: v.append(f"⚠ El bot corre pero su estado no se actualiza desde hace {ago(D['status_age'])} (posible cuelgue; el operador lo reinicia cada hora).")
     if D["stop_file"]: v.append("⚠ Hay un fichero STOP o STOP_solana: el supervisor no relanza el bot de Solana.")
@@ -198,6 +239,9 @@ def report(D):
     st, L, T, now, H = D["status"], D["log"], D["trades"], D["now"], D["hours"]
     o = [f"== Diagnóstico del bot · {time.strftime('%d/%m %H:%M', time.localtime(now))} · últimas {H} h", "Veredicto:"] + [f"  {x}" for x in verdict(D)]
     pr = D["procs"]
+    sup = D.get("sup") or {}
+    o.append(f"Arranque automático: {'sí' if D.get('autostart') else 'NO' if D.get('autostart') is False else 'n/a (no es WSL)'} · supervisor {H} h: {sup.get('starts', 0)} arranques del bot, {sup.get('bad_exits', 0)} caídas con error"
+             + (f" · último error: {D['crash']}" if D.get("crash") and sup.get("bad_exits") else ""))
     o.append("Procesos: " + (" · ".join(f"{k} {'✓' if n else '✖'}" + (f"×{n}" if n and n > 1 and k != "supervisor" else "") for k, n in pr.items()) if pr.get("solana") is not None else "no se pudo consultar (pgrep)"))
     w = st.get("wallet") if isinstance(st.get("wallet"), dict) else {}
     o.append(f"Solana: modo {'REAL' if st.get('mode') == 'live' else 'PAPEL' if st else '?'} · patrimonio {num(st.get('equity'))} $ (efectivo {num(st.get('cash'))} $) · hoy {sgn(st.get('day_pnl_pct'), 1)} %"

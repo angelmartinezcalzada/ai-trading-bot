@@ -120,3 +120,26 @@ def test_missing_files_never_raise(tmp_path):
 def test_clean_and_num():
     assert dg.num(1234.5) == "1.234,50" and dg.sgn(-0.4) == "-0,4" and dg.sgn(None) == "?" and dg.ago(30) == "30 s" and dg.ago(7300) == "2,0 h"
     assert dg.clean("wss://x.io/ws?api-key=ABC token=DEF") == "wss://x.io/… token=***"
+
+
+def test_process_patterns_ignore_wrapper_shells():
+    wrap = ["11 /bin/bash -c cd x && python3 bot.py --exchange solana --live && python3 dashboard.py", "12 bash -c pkill -f run_forever.sh"]
+    c = dg.count_procs(PROCS_OK + wrap)
+    assert c["solana"] == 1 and c["panel"] == 1 and c["supervisor"] == 2
+    assert dg.count_procs(["5 /usr/bin/python3.12 bot.py --exchange solana"])["solana"] == 1
+
+
+def test_crash_loop_and_missing_autostart_are_explained(tmp_path, monkeypatch):
+    d = make(tmp_path, trades=False)
+    iso_tz = lambda sec: time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(NOW - sec)) + time.strftime("%z", time.localtime(NOW - sec))[:3] + ":" + time.strftime("%z", time.localtime(NOW - sec))[3:]
+    open(os.path.join(d, "supervisor.log"), "w").write("".join(f"{iso_tz(600 - 60 * i)} [solana] start mode=live\n{iso_tz(590 - 60 * i)} [solana] exited code 1\n" for i in range(4))
+                                                      + f"{iso_tz(90000)} [solana] exited code 1\n")       # outside the window
+    open(os.path.join(d, "stdout_solana.log"), "w").write(f"{lt(600)} INFO [solana] EXIT MODE trail\nTraceback (most recent call last):\n  File \"bot.py\", line 3\nModuleNotFoundError: No module named 'foo'\n")
+    monkeypatch.setenv("WSL_DISTRO_NAME", "Ubuntu")
+    D, out = run(d, procs=[l for l in PROCS_OK if "solana" not in l and "run_forever" not in l])
+    assert D["sup"]["starts"] == 4 and D["sup"]["bad_exits"] == 4 and D["sup"]["last_code"] == 1
+    assert "✖ El bot de Solana se cae al arrancar: el supervisor lo relanzó 4 veces (último código 1); último error: ModuleNotFoundError: No module named 'foo'." in out
+    assert "⚠ Sin arranque automático" in out and "Arranque automático: NO" in out
+    vbs = os.path.join(d, "TradingBot.vbs"); open(vbs, "w").write("x"); open(os.path.join(d, ".autostart"), "w").write(vbs + "\n")
+    _, out = run(d, procs=PROCS_OK)
+    assert "Arranque automático: sí" in out and "Sin arranque automático" not in out

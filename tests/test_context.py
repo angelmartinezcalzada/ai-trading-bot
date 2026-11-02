@@ -440,3 +440,15 @@ def test_summary_line_formats_every_value():
     assert "calor hot" in line and line.endswith("amplitud 2/2")
     s["regime"]["btc_on"] = False; s["regime"]["risk_off"] = False
     assert "BTC off" in C.summary_line(s) and "riesgo-off no" in C.summary_line(s)
+
+
+def test_sol_price_falls_back_to_jupiter_when_binance_fails(monkeypatch):
+    calls = []
+    def fake_get(url, **params):
+        calls.append(url)
+        if "binance" in url: raise RuntimeError("451")
+        return {"So11111111111111111111111111111111111111112": {"usdPrice": 94.3, "priceChange24h": -1.2}}
+    monkeypatch.setattr(C, "_get", fake_get)
+    assert C._f_sol_price() == 94.3 and "binance" in calls[0] and "jup.ag" in calls[1]
+    monkeypatch.setattr(C, "_get", lambda url, **p: (_ for _ in ()).throw(RuntimeError("down")))
+    with pytest.raises(Exception): C._f_sol_price()                                                  # both down -> raises -> gather stores None

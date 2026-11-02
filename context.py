@@ -42,7 +42,12 @@ def _get(url, **params):
     r = requests.get(url, params=params or None, timeout=TIMEOUT, headers={"accept": "application/json"}); r.raise_for_status(); return r.json()
 
 def _f_sol_price():
-    return float(_get("https://api.binance.com/api/v3/ticker/price", symbol="SOLUSDT")["price"])
+    """SOL/USD: Binance ticker; if Binance is unreachable from this machine (seen 02-nov on a WSL box: SOL '?' in the snapshot),
+    the same Jupiter price the memebot already uses. The hourly history then yields r1h/r4h/r24h after a day even without klines."""
+    try: return float(_get("https://api.binance.com/api/v3/ticker/price", symbol="SOLUSDT")["price"])
+    except Exception:
+        d = _get("https://lite-api.jup.ag/price/v3", ids="So11111111111111111111111111111111111111112")
+        return float((d.get("So11111111111111111111111111111111111111112") or {})["usdPrice"])
 
 def _f_klines(sym):
     return _get("https://api.binance.com/api/v3/klines", symbol=sym, interval="1h", limit=25)
